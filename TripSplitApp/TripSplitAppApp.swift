@@ -9,24 +9,11 @@ import SwiftUI
 import SwiftData
 
 @main
-struct TripSplitAppApp: App {
-    var sharedModelContainer: ModelContainer = {
-        let schema = Schema([
-            Item.self,
-        ])
-        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
-
-        do {
-            return try ModelContainer(for: schema, configurations: [modelConfiguration])
-        } catch {
-            fatalError("Could not create ModelContainer: \(error)")
-        }
-    }()
-
+struct TripSplitApp: App {
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            TripListView()
         }
-        .modelContainer(sharedModelContainer)
+        .modelContainer(for: [Trip.self, Person.self, Expense.self])
     }
 }
