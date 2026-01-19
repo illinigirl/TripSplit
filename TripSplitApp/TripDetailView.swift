@@ -3,8 +3,8 @@ import SwiftData
 
 struct TripDetailView: View {
     let trip: Trip
+    @Environment(\.modelContext) private var modelContext
     @State private var showingAddExpense = false
-    @State private var showingSettlement = false
     
     var whoShouldPayNext: Person? {
         guard !trip.participants.isEmpty else { return nil }
@@ -53,24 +53,25 @@ struct TripDetailView: View {
                         .foregroundStyle(.secondary)
                 } else {
                     ForEach(trip.expenses.sorted(by: { $0.date > $1.date })) { expense in
-                        VStack(alignment: .leading) {
-                            HStack {
-                                Text(expense.expenseDescription)
-                                    .font(.headline)
-                                Spacer()
-                                Text("$\(expense.amount, specifier: "%.2f")")
+                        NavigationLink(destination: ExpenseDetailView(expense: expense, trip: trip)) {
+                            VStack(alignment: .leading) {
+                                HStack {
+                                    Text(expense.expenseDescription)
+                                        .font(.headline)
+                                    Spacer()
+                                    Text("$\(expense.amount, specifier: "%.2f")")
+                                }
+                                Text("Paid by \(expense.paidBy?.name ?? "Unknown") • Split \(expense.participantCount) ways")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
                             }
-                            Text("Paid by \(expense.paidBy?.name ?? "Unknown") • Split \(expense.participants.count) ways")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
                         }
                     }
+                    .onDelete(perform: deleteExpenses)
                 }
             }
         }
         .navigationTitle(trip.name)
-        
-        
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {
@@ -85,9 +86,19 @@ struct TripDetailView: View {
                 }
             }
         }
-        
         .sheet(isPresented: $showingAddExpense) {
             AddExpenseView(trip: trip)
+        }
+    }
+    
+    private func deleteExpenses(at offsets: IndexSet) {
+        let sortedExpenses = trip.expenses.sorted(by: { $0.date > $1.date })
+        for index in offsets {
+            let expense = sortedExpenses[index]
+            modelContext.delete(expense)
+            if let tripIndex = trip.expenses.firstIndex(where: { $0.id == expense.id }) {
+                trip.expenses.remove(at: tripIndex)
+            }
         }
     }
 }

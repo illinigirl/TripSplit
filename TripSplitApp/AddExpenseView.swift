@@ -3,14 +3,14 @@
 //  TripSplitApp
 //
 //  Created by Megan Schott on 1/19/26.
-//
+//import SwiftUIimport SwiftUIimport SwiftUI
 import SwiftUI
 import SwiftData
 
 enum SplitType: String, CaseIterable {
     case even = "Split Evenly"
     case custom = "Custom Amounts"
-    case entree = "By Entree"
+    case item = "By Item"
 }
 
 struct AddExpenseView: View {
@@ -23,10 +23,10 @@ struct AddExpenseView: View {
     @State private var description = ""
     @State private var category = "Food"
     @State private var selectedPayer: Person?
-    @State private var selectedParticipants: Set<Person> = []
+    @State private var selectedParticipants: Set<PersistentIdentifier> = []
     @State private var splitType: SplitType = .even
-    @State private var customAmounts: [Person: String] = [:]
-    @State private var entreeAmounts: [Person: String] = [:]
+    @State private var customAmounts: [PersistentIdentifier: String] = [:]
+    @State private var itemAmounts: [PersistentIdentifier: String] = [:]
     @State private var subtotal = ""
     
     let categories = ["Food", "Drinks", "Transportation", "Lodging", "Entertainment", "Miscellaneous"]
@@ -37,6 +37,9 @@ struct AddExpenseView: View {
                 Section("Expense Details") {
                     TextField("Amount", text: $amount)
                         .keyboardType(.decimalPad)
+                        .onChange(of: amount) { oldValue, newValue in
+                            amount = filterNumeric(newValue)
+                        }
                     TextField("Description", text: $description)
                     
                     Picker("Category", selection: $category) {
@@ -80,8 +83,8 @@ struct AddExpenseView: View {
                     evenSplitSection
                 case .custom:
                     customAmountsSection
-                case .entree:
-                    entreeSection
+                case .item:
+                    itemSection
                 }
             }
             .navigationTitle("Add Expense")
@@ -109,7 +112,7 @@ struct AddExpenseView: View {
                         .frame(width: 25, height: 25)
                     Text(person.name)
                     Spacer()
-                    if selectedParticipants.contains(person) {
+                    if selectedParticipants.contains(person.persistentModelID) {
                         Image(systemName: "checkmark.circle.fill")
                             .foregroundStyle(.blue)
                     } else {
@@ -119,16 +122,16 @@ struct AddExpenseView: View {
                 }
                 .contentShape(Rectangle())
                 .onTapGesture {
-                    if selectedParticipants.contains(person) {
-                        selectedParticipants.remove(person)
+                    if selectedParticipants.contains(person.persistentModelID) {
+                        selectedParticipants.remove(person.persistentModelID)
                     } else {
-                        selectedParticipants.insert(person)
+                        selectedParticipants.insert(person.persistentModelID)
                     }
                 }
             }
             
             Button("Select All") {
-                selectedParticipants = Set(trip.participants)
+                selectedParticipants = Set(trip.participants.map { $0.persistentModelID })
             }
             
             if !selectedParticipants.isEmpty, let amountValue = Double(amount) {
@@ -148,13 +151,13 @@ struct AddExpenseView: View {
                     Text(person.name)
                     Spacer()
                     TextField("$0.00", text: Binding(
-                        get: { customAmounts[person] ?? "" },
+                        get: { customAmounts[person.persistentModelID] ?? "" },
                         set: {
-                            customAmounts[person] = $0
+                            customAmounts[person.persistentModelID] = $0
                             if Double($0) ?? 0 > 0 {
-                                selectedParticipants.insert(person)
+                                selectedParticipants.insert(person.persistentModelID)
                             } else {
-                                selectedParticipants.remove(person)
+                                selectedParticipants.remove(person.persistentModelID)
                             }
                         }
                     ))
@@ -181,10 +184,13 @@ struct AddExpenseView: View {
         }
     }
     
-    private var entreeSection: some View {
-        Section("By Entree") {
-            TextField("Subtotal (before tax/tip)", text: $subtotal)
+    private var itemSection: some View {
+        Section("By Item") {
+            TextField("Subtotal (before tax/tip/fees)", text: $subtotal)
                 .keyboardType(.decimalPad)
+                .onChange(of: subtotal) { oldValue, newValue in
+                    subtotal = filterNumeric(newValue)
+                }
             
             ForEach(trip.participants) { person in
                 HStack {
@@ -193,14 +199,14 @@ struct AddExpenseView: View {
                         .frame(width: 25, height: 25)
                     Text(person.name)
                     Spacer()
-                    TextField("Entree $", text: Binding(
-                        get: { entreeAmounts[person] ?? "" },
+                    TextField("Item $", text: Binding(
+                        get: { itemAmounts[person.persistentModelID] ?? "" },
                         set: {
-                            entreeAmounts[person] = $0
+                            itemAmounts[person.persistentModelID] = $0
                             if Double($0) ?? 0 > 0 {
-                                selectedParticipants.insert(person)
+                                selectedParticipants.insert(person.persistentModelID)
                             } else {
-                                selectedParticipants.remove(person)
+                                selectedParticipants.remove(person.persistentModelID)
                             }
                         }
                     ))
@@ -211,25 +217,25 @@ struct AddExpenseView: View {
             }
             
             if let sub = Double(subtotal), sub > 0 {
-                let entreeTotal = entreeAmounts.values.compactMap { Double($0) }.reduce(0, +)
+                let itemTotal = itemAmounts.values.compactMap { Double($0) }.reduce(0, +)
                 HStack {
                     Text("Assigned")
                     Spacer()
-                    Text("$\(entreeTotal, specifier: "%.2f")")
+                    Text("$\(itemTotal, specifier: "%.2f")")
                 }
                 HStack {
                     Text("Remaining")
                     Spacer()
-                    Text("$\(sub - entreeTotal, specifier: "%.2f")")
-                        .foregroundStyle(abs(sub - entreeTotal) < 0.01 ? .green : .red)
+                    Text("$\(sub - itemTotal, specifier: "%.2f")")
+                        .foregroundStyle(abs(sub - itemTotal) < 0.01 ? .green : .red)
                 }
             }
             
             if let total = Double(amount), let sub = Double(subtotal), sub > 0 {
-                ForEach(trip.participants.filter { entreeAmounts[$0] != nil && Double(entreeAmounts[$0]!) ?? 0 > 0 }) { person in
-                    if let entree = Double(entreeAmounts[person] ?? "0") {
-                        let percentage = (entree / sub) * 100
-                        let owes = (entree / sub) * total
+                ForEach(trip.participants.filter { itemAmounts[$0.persistentModelID] != nil && Double(itemAmounts[$0.persistentModelID]!) ?? 0 > 0 }) { person in
+                    if let item = Double(itemAmounts[person.persistentModelID] ?? "0") {
+                        let percentage = (item / sub) * 100
+                        let owes = (item / sub) * total
                         HStack {
                             Text(person.name)
                             Spacer()
@@ -240,6 +246,15 @@ struct AddExpenseView: View {
                 }
             }
         }
+    }
+    
+    private func filterNumeric(_ value: String) -> String {
+        let filtered = value.filter { "0123456789.".contains($0) }
+        let parts = filtered.split(separator: ".")
+        if parts.count > 2 {
+            return String(parts[0]) + "." + parts[1...].joined()
+        }
+        return filtered
     }
     
     private var canSave: Bool {
@@ -254,10 +269,10 @@ struct AddExpenseView: View {
         case .custom:
             let assigned = customAmounts.values.compactMap { Double($0) }.reduce(0, +)
             return abs(assigned - amountValue) < 0.01
-        case .entree:
+        case .item:
             guard let sub = Double(subtotal), sub > 0 else { return false }
-            let entreeTotal = entreeAmounts.values.compactMap { Double($0) }.reduce(0, +)
-            return abs(entreeTotal - sub) < 0.01
+            let itemTotal = itemAmounts.values.compactMap { Double($0) }.reduce(0, +)
+            return abs(itemTotal - sub) < 0.01
         }
     }
     
@@ -273,10 +288,47 @@ struct AddExpenseView: View {
         )
         
         expense.trip = trip
-        expense.participants = Array(selectedParticipants)
+        
+        // Calculate and store individual shares based on split type
+        // This is our source of truth - no need for participants array!
+        var shares: [String: Double] = [:]
+        
+        let participantsList = trip.participants.filter { selectedParticipants.contains($0.persistentModelID) }
+        
+        switch splitType {
+        case .even:
+            let shareAmount = amountValue / Double(selectedParticipants.count)
+            for person in participantsList {
+                shares["\(person.persistentModelID)"] = shareAmount
+            }
+            
+        case .custom:
+            for person in participantsList {
+                if let amountStr = customAmounts[person.persistentModelID],
+                   let customAmount = Double(amountStr) {
+                    shares["\(person.persistentModelID)"] = customAmount
+                }
+            }
+            
+        case .item:
+            if let sub = Double(subtotal), sub > 0 {
+                for person in participantsList {
+                    if let itemStr = itemAmounts[person.persistentModelID],
+                       let itemAmount = Double(itemStr) {
+                        let percentage = itemAmount / sub
+                        let owedAmount = percentage * amountValue
+                        shares["\(person.persistentModelID)"] = owedAmount
+                    }
+                }
+            }
+        }
+        
+        expense.participantShares = shares
         
         modelContext.insert(expense)
         trip.expenses.append(expense)
+        
+        try? modelContext.save()
         
         dismiss()
     }

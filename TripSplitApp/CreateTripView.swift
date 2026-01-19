@@ -4,7 +4,6 @@
 //
 //  Created by Megan Schott on 1/19/26.
 //
-
 import SwiftUI
 import SwiftData
 
@@ -15,6 +14,7 @@ struct CreateTripView: View {
     @State private var tripName = ""
     @State private var startDate = Date()
     @State private var participantNames: [String] = [""]
+    @FocusState private var focusedField: Int?
     
     var body: some View {
         NavigationStack {
@@ -28,6 +28,7 @@ struct CreateTripView: View {
                     ForEach(participantNames.indices, id: \.self) { index in
                         HStack {
                             TextField("Name", text: $participantNames[index])
+                                .focused($focusedField, equals: index)
                             if participantNames.count > 1 {
                                 Button(role: .destructive) {
                                     participantNames.remove(at: index)
@@ -40,6 +41,10 @@ struct CreateTripView: View {
                     
                     Button("Add Person") {
                         participantNames.append("")
+                        // Focus on the new field
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            focusedField = participantNames.count - 1
+                        }
                     }
                 }
             }
