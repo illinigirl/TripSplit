@@ -33,10 +33,23 @@ class Person: Identifiable {
     var name: String
     var color: String
     var trip: Trip?
+    @Relationship(deleteRule: .cascade) var lineItems: [LineItem] = []
     
     init(name: String, color: String = "blue") {
         self.name = name
         self.color = color
+    }
+    
+    // Get total of individual line items for a specific expense
+    func lineItemTotal(for expense: Expense) -> Double {
+        lineItems.filter { $0.expense == expense }.reduce(0) { $0 + $1.amount }
+    }
+    
+    // Get share of shared items for a specific expense
+    func sharedItemTotal(for expense: Expense) -> Double {
+        return expense.sharedItems
+            .filter { $0.sharedBy.contains(where: { $0.id == self.id }) }
+            .reduce(0) { $0 + $1.amountPerPerson }
     }
     
     func totalPaid(in trip: Trip) -> Double {
@@ -45,11 +58,22 @@ class Person: Identifiable {
     
     func totalOwed(in trip: Trip) -> Double {
         trip.expenses.reduce(0) { total, expense in
-            // Find share for this person in this expense
+            // For expenses with line items or shared items, calculate from those
+            let lineItemTotal = lineItemTotal(for: expense)
+            let sharedTotal = sharedItemTotal(for: expense)
+            
+            // For other split types, use the existing ExpenseShare
             if let share = expense.shares.first(where: { $0.person == self }) {
-                return total + share.amount
+                // If this is an itemized expense, the share already includes everything
+                // Otherwise just use the share amount
+                if lineItemTotal > 0 || sharedTotal > 0 {
+                    return total + share.amount
+                } else {
+                    return total + share.amount
+                }
             }
-            return total
+            
+            return total + lineItemTotal + sharedTotal
         }
     }
     
@@ -66,6 +90,7 @@ class Expense: Identifiable {
     var category: String
     var paidBy: Person?
     @Relationship(deleteRule: .cascade, inverse: \ExpenseShare.expense) var shares: [ExpenseShare] = []
+    @Relationship(deleteRule: .cascade) var sharedItems: [SharedItem] = []
     var trip: Trip?
     
     init(amount: Double, description: String, date: Date = Date(), category: String = "other", paidBy: Person? = nil) {
@@ -102,6 +127,37 @@ class ExpenseShare: Identifiable {
 }
 
 @Model
+class LineItem: Identifiable {
+    var name: String
+    var amount: Double
+    var person: Person?
+    var expense: Expense?
+    
+    init(name: String, amount: Double) {
+        self.name = name
+        self.amount = amount
+    }
+}
+
+@Model
+class SharedItem: Identifiable {
+    var name: String
+    var amount: Double
+    @Relationship(deleteRule: .nullify) var sharedBy: [Person] = []
+    var expense: Expense?
+    
+    init(name: String, amount: Double) {
+        self.name = name
+        self.amount = amount
+    }
+    
+    var amountPerPerson: Double {
+        guard !sharedBy.isEmpty else { return 0 }
+        return amount / Double(sharedBy.count)
+    }
+}
+
+@Model
 class Friend: Identifiable {
     var name: String
     var color: String
@@ -115,6 +171,7 @@ class Friend: Identifiable {
         self.phone = phone
     }
 }
+
 @Model
 class PaymentRecord: Identifiable {
     var fromPersonName: String

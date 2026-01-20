@@ -22,6 +22,7 @@ struct SettlementView: View {
     @Query private var friends: [Friend]
     @State private var showingMessageComposer = false
     @State private var recordingPayment: Payment?
+    @State private var showingManualPayment = false
     
     var settlements: [Payment] {
         calculateSettlement()
@@ -205,6 +206,16 @@ struct SettlementView: View {
         }
         .navigationTitle("Settle Up")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    showingManualPayment = true
+                } label: {
+                    Image(systemName: "plus.circle.fill")
+                        .foregroundStyle(Color.sunsetOrange)
+                }
+            }
+        }
         .sheet(isPresented: $showingMessageComposer) {
             if MFMessageComposeViewController.canSendText() {
                 MessageComposer(
@@ -214,6 +225,9 @@ struct SettlementView: View {
             } else {
                 Text("Unable to send messages from this device")
             }
+        }
+        .sheet(isPresented: $showingManualPayment) {
+            RecordManualPaymentView(trip: trip)
         }
         .alert("Record Payment", isPresented: Binding(
             get: { recordingPayment != nil },

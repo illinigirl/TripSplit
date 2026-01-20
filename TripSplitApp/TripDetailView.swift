@@ -5,6 +5,7 @@ struct TripDetailView: View {
     let trip: Trip
     @Environment(\.modelContext) private var modelContext
     @State private var showingAddExpense = false
+    @State private var showingAddPerson = false
     
     var whoShouldPayNext: Person? {
         guard !trip.participants.isEmpty else { return nil }
@@ -13,7 +14,7 @@ struct TripDetailView: View {
     
     var body: some View {
         ZStack {
-            // Sunset to Ocean gradient background
+            // Gradient background
             LinearGradient(
                 colors: [Color.sunsetOrange.opacity(0.35), Color.oceanBlue.opacity(0.3)],
                 startPoint: .topLeading,
@@ -116,15 +117,27 @@ struct TripDetailView: View {
                 }
             }
             ToolbarItem(placement: .navigationBarTrailing) {
-                NavigationLink(destination: SettlementView(trip: trip)) {
-                    Text("Settle Up")
+                Menu {
+                    Button {
+                        showingAddPerson = true
+                    } label: {
+                        Label("Add Person", systemImage: "person.badge.plus")
+                    }
+                    
+                    NavigationLink(destination: SettlementView(trip: trip)) {
+                        Label("Settle Up", systemImage: "checkmark.circle")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
                         .foregroundStyle(Color.oceanBlue)
-                        .fontWeight(.semibold)
                 }
             }
         }
         .sheet(isPresented: $showingAddExpense) {
             AddExpenseView(trip: trip)
+        }
+        .sheet(isPresented: $showingAddPerson) {
+            AddPersonToTripView(trip: trip)
         }
     }
     
