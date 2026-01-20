@@ -12,64 +12,97 @@ struct TripDetailView: View {
     }
     
     var body: some View {
-        List {
-            if !trip.expenses.isEmpty, let nextPayer = whoShouldPayNext {
-                Section {
-                    HStack {
-                        Circle()
-                            .fill(Color(nextPayer.color))
-                            .frame(width: 30, height: 30)
-                        VStack(alignment: .leading) {
-                            Text("\(nextPayer.name) should grab the next one")
-                                .font(.headline)
-                            Text("Down $\(abs(nextPayer.netBalance(in: trip)), specifier: "%.2f")")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Image(systemName: "arrow.right.circle.fill")
-                            .foregroundStyle(.blue)
-                    }
-                }
-            }
+        ZStack {
+            // Sunset to Ocean gradient background
+            LinearGradient(
+                colors: [Color.sunsetOrange.opacity(0.35), Color.oceanBlue.opacity(0.3)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
             
-            Section("Balances") {
-                ForEach(trip.participants) { person in
-                    HStack {
-                        Circle()
-                            .fill(Color(person.color))
-                            .frame(width: 30, height: 30)
-                        Text(person.name)
-                        Spacer()
-                        Text("$\(person.netBalance(in: trip), specifier: "%.2f")")
-                            .foregroundStyle(person.netBalance(in: trip) >= 0 ? .green : .red)
-                    }
-                }
-            }
-            
-            Section("Expenses") {
-                if trip.expenses.isEmpty {
-                    Text("No expenses yet")
-                        .foregroundStyle(.secondary)
-                } else {
-                    ForEach(trip.expenses.sorted(by: { $0.date > $1.date })) { expense in
-                        NavigationLink(destination: ExpenseDetailView(expense: expense, trip: trip)) {
-                            VStack(alignment: .leading) {
-                                HStack {
-                                    Text(expense.expenseDescription)
-                                        .font(.headline)
-                                    Spacer()
-                                    Text("$\(expense.amount, specifier: "%.2f")")
-                                }
-                                Text("Paid by \(expense.paidBy?.name ?? "Unknown") • Split \(expense.participantCount) ways")
+            List {
+                if !trip.expenses.isEmpty, let nextPayer = whoShouldPayNext {
+                    Section {
+                        HStack {
+                            Circle()
+                                .fill(Color.participantColors[nextPayer.color] ?? .blue)
+                                .frame(width: 40, height: 40)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("\(nextPayer.name) should grab the next one")
+                                    .font(.headline)
+                                Text("Down $\(abs(nextPayer.netBalance(in: trip)), specifier: "%.2f")")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
+                            Spacer()
+                            Image(systemName: "arrow.right.circle.fill")
+                                .font(.title2)
+                                .foregroundStyle(Color.sunsetOrange)
                         }
+                        .padding(.vertical, 8)
                     }
-                    .onDelete(perform: deleteExpenses)
+                    .listRowBackground(Color.cardBackground)
                 }
+                
+                Section("Balances") {
+                    ForEach(trip.participants) { person in
+                        HStack {
+                            Circle()
+                                .fill(Color.participantColors[person.color] ?? .blue)
+                                .frame(width: 35, height: 35)
+                            Text(person.name)
+                                .font(.headline)
+                            Spacer()
+                            Text("$\(person.netBalance(in: trip), specifier: "%.2f")")
+                                .font(.headline)
+                                .foregroundStyle(person.netBalance(in: trip) >= 0 ? Color.moneyOwing : Color.moneyOwed)
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+                .listRowBackground(Color.cardBackground)
+                
+                Section("Expenses") {
+                    if trip.expenses.isEmpty {
+                        Text("No expenses yet")
+                            .foregroundStyle(.secondary)
+                            .italic()
+                    } else {
+                        ForEach(trip.expenses.sorted(by: { $0.date > $1.date })) { expense in
+                            NavigationLink(destination: ExpenseDetailView(expense: expense, trip: trip)) {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 6) {
+                                        Text(expense.expenseDescription)
+                                            .font(.headline)
+                                        HStack(spacing: 4) {
+                                            if let payer = expense.paidBy {
+                                                Circle()
+                                                    .fill(Color.participantColors[payer.color] ?? .blue)
+                                                    .frame(width: 16, height: 16)
+                                                Text(payer.name)
+                                            }
+                                            Text("•")
+                                                .foregroundStyle(.secondary)
+                                            Text("\(expense.participantCount) people")
+                                        }
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    Text("$\(expense.amount, specifier: "%.2f")")
+                                        .font(.headline)
+                                        .foregroundStyle(Color.oceanBlue)
+                                }
+                                .padding(.vertical, 4)
+                            }
+                        }
+                        .onDelete(perform: deleteExpenses)
+                    }
+                }
+                .listRowBackground(Color.cardBackground)
             }
+            .scrollContentBackground(.hidden)
         }
         .navigationTitle(trip.name)
         .toolbar {
@@ -77,12 +110,16 @@ struct TripDetailView: View {
                 Button {
                     showingAddExpense = true
                 } label: {
-                    Image(systemName: "plus")
+                    Image(systemName: "plus.circle.fill")
+                        .font(.title2)
+                        .foregroundStyle(Color.sunsetOrange)
                 }
             }
             ToolbarItem(placement: .navigationBarTrailing) {
                 NavigationLink(destination: SettlementView(trip: trip)) {
                     Text("Settle Up")
+                        .foregroundStyle(Color.oceanBlue)
+                        .fontWeight(.semibold)
                 }
             }
         }

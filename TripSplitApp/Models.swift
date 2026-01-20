@@ -15,6 +15,7 @@ class Trip: Identifiable {
     var endDate: Date?
     @Relationship(deleteRule: .cascade) var participants: [Person] = []
     @Relationship(deleteRule: .cascade) var expenses: [Expense] = []
+    @Relationship(deleteRule: .cascade) var paymentRecords: [PaymentRecord] = []
     
     init(name: String, startDate: Date, endDate: Date? = nil) {
         self.name = name
@@ -44,9 +45,9 @@ class Person: Identifiable {
     
     func totalOwed(in trip: Trip) -> Double {
         trip.expenses.reduce(0) { total, expense in
-            // Use stored share from participantShares
-            if let share = expense.participantShares["\(self.persistentModelID)"] {
-                return total + share
+            // Find share for this person in this expense
+            if let share = expense.shares.first(where: { $0.person == self }) {
+                return total + share.amount
             }
             return total
         }
@@ -64,7 +65,7 @@ class Expense: Identifiable {
     var date: Date
     var category: String
     var paidBy: Person?
-    var participantShares: [String: Double] = [:] // "\(personID)" : amount owed
+    @Relationship(deleteRule: .cascade, inverse: \ExpenseShare.expense) var shares: [ExpenseShare] = []
     var trip: Trip?
     
     init(amount: Double, description: String, date: Date = Date(), category: String = "other", paidBy: Person? = nil) {
@@ -75,14 +76,57 @@ class Expense: Identifiable {
         self.paidBy = paidBy
     }
     
-    // Helper to get participants from shares
     func getParticipants(from trip: Trip) -> [Person] {
-        return trip.participants.filter { person in
-            participantShares["\(person.persistentModelID)"] != nil
-        }
+        return shares.compactMap { $0.person }
     }
     
     var participantCount: Int {
-        participantShares.count
+        shares.count
+    }
+    
+    func getShare(for person: Person) -> Double? {
+        return shares.first(where: { $0.person == person })?.amount
+    }
+}
+
+@Model
+class ExpenseShare: Identifiable {
+    var person: Person?
+    var amount: Double
+    var expense: Expense?
+    
+    init(person: Person, amount: Double) {
+        self.person = person
+        self.amount = amount
+    }
+}
+
+@Model
+class Friend: Identifiable {
+    var name: String
+    var color: String
+    var email: String?
+    var phone: String?
+    
+    init(name: String, color: String = "blue", email: String? = nil, phone: String? = nil) {
+        self.name = name
+        self.color = color
+        self.email = email
+        self.phone = phone
+    }
+}
+@Model
+class PaymentRecord: Identifiable {
+    var fromPersonName: String
+    var toPersonName: String
+    var amount: Double
+    var date: Date
+    var trip: Trip?
+    
+    init(fromPersonName: String, toPersonName: String, amount: Double, date: Date = Date()) {
+        self.fromPersonName = fromPersonName
+        self.toPersonName = toPersonName
+        self.amount = amount
+        self.date = date
     }
 }

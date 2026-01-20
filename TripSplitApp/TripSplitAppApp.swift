@@ -14,6 +14,6 @@ struct TripSplitApp: App {
         WindowGroup {
             TripListView()
         }
-        .modelContainer(for: [Trip.self, Person.self, Expense.self])
+        .modelContainer(for: [Trip.self, Person.self, Expense.self, ExpenseShare.self, Friend.self, PaymentRecord.self])
     }
 }

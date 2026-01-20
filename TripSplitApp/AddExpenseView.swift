@@ -289,24 +289,31 @@ struct AddExpenseView: View {
         
         expense.trip = trip
         
-        // Calculate and store individual shares based on split type
-        // This is our source of truth - no need for participants array!
-        var shares: [String: Double] = [:]
+        // Insert expense first
+        modelContext.insert(expense)
+        trip.expenses.append(expense)
         
+        // Create ExpenseShare objects for each participant
         let participantsList = trip.participants.filter { selectedParticipants.contains($0.persistentModelID) }
         
         switch splitType {
         case .even:
             let shareAmount = amountValue / Double(selectedParticipants.count)
             for person in participantsList {
-                shares["\(person.persistentModelID)"] = shareAmount
+                let share = ExpenseShare(person: person, amount: shareAmount)
+                share.expense = expense
+                expense.shares.append(share)
+                modelContext.insert(share)
             }
             
         case .custom:
             for person in participantsList {
                 if let amountStr = customAmounts[person.persistentModelID],
                    let customAmount = Double(amountStr) {
-                    shares["\(person.persistentModelID)"] = customAmount
+                    let share = ExpenseShare(person: person, amount: customAmount)
+                    share.expense = expense
+                    expense.shares.append(share)
+                    modelContext.insert(share)
                 }
             }
             
@@ -317,16 +324,14 @@ struct AddExpenseView: View {
                        let itemAmount = Double(itemStr) {
                         let percentage = itemAmount / sub
                         let owedAmount = percentage * amountValue
-                        shares["\(person.persistentModelID)"] = owedAmount
+                        let share = ExpenseShare(person: person, amount: owedAmount)
+                        share.expense = expense
+                        expense.shares.append(share)
+                        modelContext.insert(share)
                     }
                 }
             }
         }
-        
-        expense.participantShares = shares
-        
-        modelContext.insert(expense)
-        trip.expenses.append(expense)
         
         try? modelContext.save()
         
