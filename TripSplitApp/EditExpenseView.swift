@@ -22,16 +22,15 @@ struct EditExpenseView: View {
     @State private var splitType: SplitType = .even
     @State private var customAmounts: [PersistentIdentifier: String] = [:]
     
-    let categories = ["Food", "Drinks", "Transportation", "Lodging", "Entertainment", "Miscellaneous"]
+    // Line items per person
+    @State private var personLineItems: [PersistentIdentifier: [TempLineItem]] = [:]
+    @State private var sharedItems: [TempSharedItem] = []
     
-    // Check if this is an itemized expense
-    private var isItemizedExpense: Bool {
-        let hasLineItems = trip.participants.contains { person in
-            !person.lineItems.filter { $0.expense == expense }.isEmpty
-        }
-        let hasSharedItems = !expense.sharedItems.isEmpty
-        return hasLineItems || hasSharedItems
-    }
+    // For adding items
+    @State private var selectedPersonID: PersistentIdentifier?
+    @State private var showingAddSharedItemSheet = false
+    
+    let categories = ["Food", "Drinks", "Transportation", "Lodging", "Entertainment", "Miscellaneous"]
     
     init(trip: Trip, expense: Expense) {
         self.trip = trip
@@ -48,23 +47,60 @@ struct EditExpenseView: View {
         let participantIDs = Set(participants.map { $0.persistentModelID })
         _selectedParticipants = State(initialValue: participantIDs)
         
-        // Check if it's an even split
-        let shares = expense.shares
-        let amounts = shares.map { $0.amount }
-        let isEven = amounts.allSatisfy { abs($0 - amounts[0]) < 0.01 }
+        // Check if this is an itemized expense
+        let hasLineItems = trip.participants.contains { person in
+            !person.lineItems.filter { $0.expense == expense }.isEmpty
+        }
+        let hasSharedItems = !expense.sharedItems.isEmpty
         
-        if isEven {
-            _splitType = State(initialValue: .even)
-        } else {
-            // Treat non-even as custom
-            _splitType = State(initialValue: .custom)
-            var customAmts: [PersistentIdentifier: String] = [:]
-            for participant in participants {
-                if let share = expense.getShare(for: participant) {
-                    customAmts[participant.persistentModelID] = String(format: "%.2f", share)
+        if hasLineItems || hasSharedItems {
+            // Load itemized data
+            _splitType = State(initialValue: .item)
+            
+            // Load line items
+            var loadedLineItems: [PersistentIdentifier: [TempLineItem]] = [:]
+            for person in trip.participants {
+                let items = person.lineItems.filter { $0.expense == expense }
+                if !items.isEmpty {
+                    loadedLineItems[person.persistentModelID] = items.map {
+                        TempLineItem(name: $0.name, amount: $0.amount)
+                    }
                 }
             }
-            _customAmounts = State(initialValue: customAmts)
+            _personLineItems = State(initialValue: loadedLineItems)
+            
+            // Load shared items
+            var loadedSharedItems: [TempSharedItem] = []
+            for sharedItem in expense.sharedItems {
+                let sharedByIDs = sharedItem.sharedBy.map { $0.persistentModelID }
+                let sharedByNames = sharedItem.sharedBy.map { $0.name }
+                loadedSharedItems.append(TempSharedItem(
+                    name: sharedItem.name,
+                    amount: sharedItem.amount,
+                    sharedByIDs: sharedByIDs,
+                    sharedByNames: sharedByNames
+                ))
+            }
+            _sharedItems = State(initialValue: loadedSharedItems)
+        } else {
+            // Check if it's an even split
+            let shares = expense.shares
+            let amounts = shares.map { $0.amount }
+            let isEven = amounts.allSatisfy { abs($0 - amounts[0]) < 0.01 }
+            
+            if isEven {
+                _splitType = State(initialValue: .even)
+            } else {
+                // Treat non-even as custom
+                _splitType = State(initialValue: .custom)
+                var customAmts: [PersistentIdentifier: String] = [:]
+                for participant in participants {
+                    if let share = expense.getShare(for: participant) {
+                        customAmts[participant.persistentModelID] = String(format: "%.2f", share)
+                    }
+                }
+                _customAmounts = State(initialValue: customAmts)
+            }
         }
     }
     
@@ -79,104 +115,77 @@ struct EditExpenseView: View {
                 )
                 .ignoresSafeArea()
                 
-                if isItemizedExpense {
-                    // Show message for itemized expenses
-                    VStack(spacing: 20) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.system(size: 60))
-                            .foregroundStyle(Color.sunsetOrange)
-                        
-                        Text("Itemized Expenses Cannot Be Edited")
-                            .font(.title2)
-                            .fontWeight(.semibold)
-                            .multilineTextAlignment(.center)
-                        
-                        Text("This expense was split by individual items. Editing itemized expenses is not currently supported.")
-                            .font(.body)
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal)
-                        
-                        Text("You can delete this expense and create a new one if needed.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal)
-                    }
-                    .padding()
-                } else {
-                    Form {
-                        Section("Expense Details") {
-                            HStack {
-                                Image(systemName: "dollarsign.circle.fill")
-                                    .foregroundStyle(Color.oceanBlue)
-                                TextField("Amount", text: $amount)
-                                    .keyboardType(.decimalPad)
-                                    .onChange(of: amount) { oldValue, newValue in
-                                        amount = filterNumeric(newValue)
-                                    }
-                            }
-                            
-                            HStack {
-                                Image(systemName: "text.alignleft")
-                                    .foregroundStyle(Color.sunsetOrange)
-                                TextField("Description", text: $description)
-                            }
-                            
-                            HStack {
-                                Image(systemName: categoryIcon(for: category))
-                                    .foregroundStyle(Color.oceanTeal)
-                                Picker("Category", selection: $category) {
-                                    ForEach(categories, id: \.self) { category in
-                                        Text(category).tag(category)
-                                    }
+                Form {
+                    Section("Expense Details") {
+                        HStack {
+                            Image(systemName: "dollarsign.circle.fill")
+                                .foregroundStyle(Color.oceanBlue)
+                            TextField("Amount", text: $amount)
+                                .keyboardType(.decimalPad)
+                                .onChange(of: amount) { oldValue, newValue in
+                                    amount = filterNumeric(newValue)
                                 }
-                            }
                         }
-                        .listRowBackground(Color.cardBackground)
                         
-                        Section("Who Paid?") {
-                            ForEach(trip.participants) { person in
-                                HStack {
-                                    Circle()
-                                        .fill(Color.participantColors[person.color] ?? .blue)
-                                        .frame(width: 30, height: 30)
-                                    Text(person.name)
-                                    Spacer()
-                                    if selectedPayer == person {
-                                        Image(systemName: "checkmark.circle.fill")
-                                            .foregroundStyle(Color.oceanBlue)
-                                    }
-                                }
-                                .contentShape(Rectangle())
-                                .onTapGesture {
-                                    selectedPayer = person
+                        HStack {
+                            Image(systemName: "text.alignleft")
+                                .foregroundStyle(Color.sunsetOrange)
+                            TextField("Description", text: $description)
+                        }
+                        
+                        HStack {
+                            Image(systemName: categoryIcon(for: category))
+                                .foregroundStyle(Color.oceanTeal)
+                            Picker("Category", selection: $category) {
+                                ForEach(categories, id: \.self) { category in
+                                    Text(category).tag(category)
                                 }
                             }
-                        }
-                        .listRowBackground(Color.cardBackground)
-                        
-                        Section("Split Type") {
-                            Picker("How to split", selection: $splitType) {
-                                ForEach(SplitType.allCases.filter { $0 != .item }, id: \.self) { type in
-                                    Text(type.rawValue).tag(type)
-                                }
-                            }
-                            .pickerStyle(.segmented)
-                        }
-                        .listRowBackground(Color.cardBackground)
-                        
-                        switch splitType {
-                        case .even:
-                            evenSplitSection
-                        case .custom:
-                            customAmountsSection
-                        case .item:
-                            EmptyView()
                         }
                     }
-                    .scrollContentBackground(.hidden)
+                    .listRowBackground(Color.cardBackground)
+                    
+                    Section("Who Paid?") {
+                        ForEach(trip.participants) { person in
+                            HStack {
+                                Circle()
+                                    .fill(Color.participantColors[person.color] ?? .blue)
+                                    .frame(width: 30, height: 30)
+                                Text(person.name)
+                                Spacer()
+                                if selectedPayer == person {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .foregroundStyle(Color.oceanBlue)
+                                }
+                            }
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                selectedPayer = person
+                            }
+                        }
+                    }
+                    .listRowBackground(Color.cardBackground)
+                    
+                    Section("Split Type") {
+                        Picker("How to split", selection: $splitType) {
+                            ForEach(SplitType.allCases, id: \.self) { type in
+                                Text(type.rawValue).tag(type)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                    }
+                    .listRowBackground(Color.cardBackground)
+                    
+                    switch splitType {
+                    case .even:
+                        evenSplitSection
+                    case .custom:
+                        customAmountsSection
+                    case .item:
+                        itemSection
+                    }
                 }
+                .scrollContentBackground(.hidden)
             }
             .navigationTitle("Edit Expense")
             .navigationBarTitleDisplayMode(.inline)
@@ -187,15 +196,25 @@ struct EditExpenseView: View {
                     }
                     .foregroundStyle(Color.moneyOwed)
                 }
-                if !isItemizedExpense {
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("Save") {
-                            saveExpense()
-                        }
-                        .foregroundStyle(Color.oceanBlue)
-                        .fontWeight(.semibold)
-                        .disabled(!canSave)
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        saveExpense()
                     }
+                    .foregroundStyle(Color.oceanBlue)
+                    .fontWeight(.semibold)
+                    .disabled(!canSave)
+                }
+            }
+            .sheet(item: $selectedPersonID) { personID in
+                if let person = trip.participants.first(where: { $0.persistentModelID == personID }) {
+                    AddLineItemSheet(personName: person.name, personColor: person.color) { item in
+                        addLineItem(item, forPersonID: personID)
+                    }
+                }
+            }
+            .sheet(isPresented: $showingAddSharedItemSheet) {
+                AddSharedItemSheet(participants: trip.participants) { item in
+                    sharedItems.append(item)
                 }
             }
         }
@@ -301,6 +320,206 @@ struct EditExpenseView: View {
         .listRowBackground(Color.cardBackground)
     }
     
+    private var itemSection: some View {
+        Group {
+            sharedItemsSection
+            individualItemsSection
+            summarySection
+            finalAmountsSection
+        }
+    }
+    
+    private var sharedItemsSection: some View {
+        Section {
+            Button(action: {
+                showingAddSharedItemSheet = true
+            }) {
+                Label("Add Shared Item", systemImage: "plus.circle.fill")
+            }
+            
+            ForEach(sharedItems) { item in
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text(item.name)
+                        Spacer()
+                        Text("$\(item.amount, specifier: "%.2f")")
+                            .fontWeight(.medium)
+                    }
+                    Text("Split between: \(item.sharedByNames.joined(separator: ", "))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text("$\(item.amountPerPerson, specifier: "%.2f") each")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .onDelete { indexSet in
+                sharedItems.remove(atOffsets: indexSet)
+            }
+        } header: {
+            Text("Shared Items (Appetizers, etc.)")
+        }
+        .listRowBackground(Color.cardBackground)
+    }
+    
+    private var individualItemsSection: some View {
+        Section {
+            ForEach(trip.participants) { person in
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Circle()
+                            .fill(Color(person.color))
+                            .frame(width: 25, height: 25)
+                        Text(person.name)
+                            .fontWeight(.medium)
+                        Spacer()
+                        Button(action: {
+                            selectedPersonID = person.persistentModelID
+                        }) {
+                            Image(systemName: "plus.circle.fill")
+                                .foregroundStyle(.blue)
+                        }
+                    }
+                    
+                    if let items = personLineItems[person.persistentModelID], !items.isEmpty {
+                        ForEach(items) { item in
+                            HStack {
+                                Text("• \(item.name)")
+                                    .font(.subheadline)
+                                Spacer()
+                                Text("$\(item.amount, specifier: "%.2f")")
+                                    .font(.subheadline)
+                            }
+                            .foregroundStyle(.secondary)
+                        }
+                        .onDelete { indexSet in
+                            personLineItems[person.persistentModelID]?.remove(atOffsets: indexSet)
+                            if personLineItems[person.persistentModelID]?.isEmpty == true {
+                                personLineItems[person.persistentModelID] = nil
+                            }
+                        }
+                        
+                        HStack {
+                            Text("Subtotal")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            Spacer()
+                            Text("$\(personSubtotal(for: person), specifier: "%.2f")")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                        }
+                    }
+                }
+                .padding(.vertical, 4)
+            }
+        } header: {
+            Text("Individual Items")
+        }
+        .listRowBackground(Color.cardBackground)
+    }
+    
+    private var summarySection: some View {
+        Section {
+            HStack {
+                Text("Individual Items")
+                Spacer()
+                Text("$\(calculateItemsSubtotal(), specifier: "%.2f")")
+            }
+            
+            HStack {
+                Text("Shared Items")
+                Spacer()
+                Text("$\(sharedItems.reduce(0) { $0 + $1.amount }, specifier: "%.2f")")
+            }
+            
+            HStack {
+                Text("Subtotal")
+                    .fontWeight(.semibold)
+                Spacer()
+                Text("$\(calculateItemsSubtotal() + sharedItems.reduce(0) { $0 + $1.amount }, specifier: "%.2f")")
+                    .fontWeight(.semibold)
+            }
+            
+            if let total = Double(amount) {
+                let grandSubtotal = calculateItemsSubtotal() + sharedItems.reduce(0) { $0 + $1.amount }
+                if grandSubtotal > 0 {
+                    let taxTipFees = total - grandSubtotal
+                    HStack {
+                        Text("Tax/Tip/Fees")
+                        Spacer()
+                        Text("$\(taxTipFees, specifier: "%.2f")")
+                            .foregroundStyle(taxTipFees >= 0 ? Color.primary : Color.red)
+                    }
+                }
+            }
+        } header: {
+            Text("Summary")
+        }
+        .listRowBackground(Color.cardBackground)
+    }
+    
+    private var finalAmountsSection: some View {
+        Group {
+            if let total = Double(amount) {
+                Section {
+                    ForEach(trip.participants) { person in
+                        if let finalAmount = calculateFinalAmount(for: person, total: total) {
+                            HStack {
+                                Circle()
+                                    .fill(Color(person.color))
+                                    .frame(width: 20, height: 20)
+                                Text(person.name)
+                                Spacer()
+                                Text("$\(finalAmount, specifier: "%.2f")")
+                                    .fontWeight(.medium)
+                            }
+                        }
+                    }
+                } header: {
+                    Text("Each Person Owes")
+                }
+                .listRowBackground(Color.cardBackground)
+            }
+        }
+    }
+    
+    private func addLineItem(_ item: TempLineItem, forPersonID personID: PersistentIdentifier) {
+        if personLineItems[personID] == nil {
+            personLineItems[personID] = []
+        }
+        personLineItems[personID]?.append(item)
+        selectedParticipants.insert(personID)
+    }
+    
+    private func personSubtotal(for person: Person) -> Double {
+        personLineItems[person.persistentModelID]?.reduce(0) { $0 + $1.amount } ?? 0
+    }
+    
+    private func calculateItemsSubtotal() -> Double {
+        personLineItems.values.reduce(0) { total, items in
+            total + items.reduce(0) { $0 + $1.amount }
+        }
+    }
+    
+    private func calculateFinalAmount(for person: Person, total: Double) -> Double? {
+        let itemsSubtotal = personSubtotal(for: person)
+        
+        let personSharedTotal = sharedItems
+            .filter { $0.sharedByIDs.contains(person.persistentModelID) }
+            .reduce(0) { $0 + $1.amountPerPerson }
+        
+        let personSubtotal = itemsSubtotal + personSharedTotal
+        
+        guard personSubtotal > 0 else { return nil }
+        
+        let grandSubtotal = calculateItemsSubtotal() + sharedItems.reduce(0) { $0 + $1.amount }
+        
+        guard grandSubtotal > 0 else { return nil }
+        
+        let percentage = personSubtotal / grandSubtotal
+        return percentage * total
+    }
+    
     private func categoryIcon(for category: String) -> String {
         switch category {
         case "Food": return "fork.knife"
@@ -334,7 +553,8 @@ struct EditExpenseView: View {
             let assigned = customAmounts.values.compactMap { Double($0) }.reduce(0, +)
             return abs(assigned - amountValue) < 0.01
         case .item:
-            return false
+            let hasItems = !personLineItems.isEmpty || !sharedItems.isEmpty
+            return hasItems
         }
     }
     
@@ -355,7 +575,24 @@ struct EditExpenseView: View {
         }
         expense.shares.removeAll()
         
-        // Create new shares
+        // Delete old line items
+        for person in trip.participants {
+            let oldItems = person.lineItems.filter { $0.expense == expense }
+            for item in oldItems {
+                modelContext.delete(item)
+                if let index = person.lineItems.firstIndex(where: { $0.id == item.id }) {
+                    person.lineItems.remove(at: index)
+                }
+            }
+        }
+        
+        // Delete old shared items
+        for oldSharedItem in expense.sharedItems {
+            modelContext.delete(oldSharedItem)
+        }
+        expense.sharedItems.removeAll()
+        
+        // Create new data based on split type
         let participantsList = trip.participants.filter { selectedParticipants.contains($0.persistentModelID) }
         
         switch splitType {
@@ -380,11 +617,46 @@ struct EditExpenseView: View {
             }
             
         case .item:
-            break // Not supported
+            // Save line items
+            for person in trip.participants {
+                if let items = personLineItems[person.persistentModelID] {
+                    for tempItem in items {
+                        let lineItem = LineItem(name: tempItem.name, amount: tempItem.amount)
+                        lineItem.person = person
+                        lineItem.expense = expense
+                        person.lineItems.append(lineItem)
+                        modelContext.insert(lineItem)
+                    }
+                }
+            }
+            
+            // Save shared items
+            for tempShared in sharedItems {
+                let sharedItem = SharedItem(name: tempShared.name, amount: tempShared.amount)
+                modelContext.insert(sharedItem)
+                sharedItem.expense = expense
+                
+                for personID in tempShared.sharedByIDs {
+                    if let person = trip.participants.first(where: { $0.persistentModelID == personID }) {
+                        sharedItem.sharedBy.append(person)
+                    }
+                }
+                
+                expense.sharedItems.append(sharedItem)
+            }
+            
+            // Create ExpenseShare for each person with items
+            for person in trip.participants {
+                if let finalAmount = calculateFinalAmount(for: person, total: amountValue) {
+                    let share = ExpenseShare(person: person, amount: finalAmount)
+                    share.expense = expense
+                    expense.shares.append(share)
+                    modelContext.insert(share)
+                }
+            }
         }
         
         try? modelContext.save()
-        
         dismiss()
     }
 }

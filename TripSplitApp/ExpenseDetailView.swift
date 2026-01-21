@@ -121,7 +121,6 @@ struct ExpenseDetailView: View {
     
     private var itemizedBreakdownSection: some View {
         Group {
-      
             // Shared Items
             if !expense.sharedItems.isEmpty {
                 Section("Shared Items") {
@@ -146,8 +145,7 @@ struct ExpenseDetailView: View {
                 }
                 .listRowBackground(Color.cardBackground)
             }
-                            
-                    
+            
             // Individual Items by Person
             Section("Individual Items") {
                 ForEach(trip.participants.filter { person in
@@ -202,6 +200,44 @@ struct ExpenseDetailView: View {
                         }
                     }
                     .padding(.vertical, 4)
+                }
+            }
+            .listRowBackground(Color.cardBackground)
+            
+            // Summary with Tax/Tip breakdown
+            Section("Breakdown") {
+                let itemsSubtotal = trip.participants.reduce(0.0) { total, person in
+                    total + person.lineItems.filter { $0.expense == expense }.reduce(0) { $0 + $1.amount }
+                }
+                let sharedSubtotal = expense.sharedItems.reduce(0) { $0 + $1.amount }
+                let subtotal = itemsSubtotal + sharedSubtotal
+                let taxTipFees = expense.amount - subtotal
+                
+                HStack {
+                    Text("Items Subtotal")
+                    Spacer()
+                    Text("$\(subtotal, specifier: "%.2f")")
+                }
+                
+                HStack {
+                    Image(systemName: "plus.circle.fill")
+                        .foregroundStyle(Color.sunsetOrange)
+                        .font(.caption)
+                    Text("Tax + Tip + Fees")
+                    Spacer()
+                    Text("$\(taxTipFees, specifier: "%.2f")")
+                        .foregroundStyle(taxTipFees >= 0 ? Color.oceanTeal : Color.moneyOwed)
+                }
+                
+                Divider()
+                
+                HStack {
+                    Text("Total")
+                        .fontWeight(.semibold)
+                    Spacer()
+                    Text("$\(expense.amount, specifier: "%.2f")")
+                        .fontWeight(.semibold)
+                        .foregroundStyle(Color.oceanBlue)
                 }
             }
             .listRowBackground(Color.cardBackground)
