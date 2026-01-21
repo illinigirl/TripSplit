@@ -39,59 +39,73 @@ struct AddExpenseView: View {
     
     var body: some View {
         NavigationStack {
-            Form {
-                Section("Expense Details") {
-                    TextField("Amount", text: $amount)
-                        .keyboardType(.decimalPad)
-                        .onChange(of: amount) { oldValue, newValue in
-                            amount = filterNumeric(newValue)
-                        }
-                    TextField("Description", text: $description)
-                    
-                    Picker("Category", selection: $category) {
-                        ForEach(categories, id: \.self) { category in
-                            Text(category).tag(category)
-                        }
-                    }
-                }
+            ZStack {
+                // Gradient background
+                LinearGradient(
+                    colors: [Color.sunsetOrange.opacity(0.35), Color.oceanBlue.opacity(0.3)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .ignoresSafeArea()
                 
-                Section("Who Paid?") {
-                    ForEach(trip.participants) { person in
-                        HStack {
-                            Circle()
-                                .fill(Color(person.color))
-                                .frame(width: 25, height: 25)
-                            Text(person.name)
-                            Spacer()
-                            if selectedPayer == person {
-                                Image(systemName: "checkmark")
-                                    .foregroundStyle(.blue)
+                Form {
+                    Section("Expense Details") {
+                        TextField("Amount", text: $amount)
+                            .keyboardType(.decimalPad)
+                            .onChange(of: amount) { oldValue, newValue in
+                                amount = filterNumeric(newValue)
+                            }
+                        TextField("Description", text: $description)
+                        
+                        Picker("Category", selection: $category) {
+                            ForEach(categories, id: \.self) { category in
+                                Text(category).tag(category)
                             }
                         }
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            selectedPayer = person
+                    }
+                    .listRowBackground(Color.cardBackground)
+                    
+                    Section("Who Paid?") {
+                        ForEach(trip.participants) { person in
+                            HStack {
+                                Circle()
+                                    .fill(Color(person.color))
+                                    .frame(width: 25, height: 25)
+                                Text(person.name)
+                                Spacer()
+                                if selectedPayer == person {
+                                    Image(systemName: "checkmark")
+                                        .foregroundStyle(.blue)
+                                }
+                            }
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                selectedPayer = person
+                            }
                         }
                     }
-                }
-                
-                Section("Split Type") {
-                    Picker("How to split", selection: $splitType) {
-                        ForEach(SplitType.allCases, id: \.self) { type in
-                            Text(type.rawValue).tag(type)
+                    .listRowBackground(Color.cardBackground)
+                    
+                    Section("Split Type") {
+                        Picker("How to split", selection: $splitType) {
+                            ForEach(SplitType.allCases, id: \.self) { type in
+                                Text(type.rawValue).tag(type)
+                            }
                         }
+                        .pickerStyle(.segmented)
                     }
-                    .pickerStyle(.segmented)
+                    .listRowBackground(Color.cardBackground)
+                    
+                    switch splitType {
+                    case .even:
+                        evenSplitSection
+                    case .custom:
+                        customAmountsSection
+                    case .item:
+                        itemSection
+                    }
                 }
-                
-                switch splitType {
-                case .even:
-                    evenSplitSection
-                case .custom:
-                    customAmountsSection
-                case .item:
-                    itemSection
-                }
+                .scrollContentBackground(.hidden)
             }
             .navigationTitle("Add Expense")
             .navigationBarTitleDisplayMode(.inline)
@@ -158,6 +172,7 @@ struct AddExpenseView: View {
                     .foregroundStyle(.secondary)
             }
         }
+        .listRowBackground(Color.cardBackground)
     }
     
     private var customAmountsSection: some View {
@@ -201,6 +216,7 @@ struct AddExpenseView: View {
                 }
             }
         }
+        .listRowBackground(Color.cardBackground)
     }
     
     private var itemSection: some View {
@@ -242,6 +258,7 @@ struct AddExpenseView: View {
         } header: {
             Text("Shared Items (Appetizers, etc.)")
         }
+        .listRowBackground(Color.cardBackground)
     }
     
     private var individualItemsSection: some View {
@@ -291,6 +308,7 @@ struct AddExpenseView: View {
         } header: {
             Text("Individual Items")
         }
+        .listRowBackground(Color.cardBackground)
     }
     
     private var summarySection: some View {
@@ -330,6 +348,7 @@ struct AddExpenseView: View {
         } header: {
             Text("Summary")
         }
+        .listRowBackground(Color.cardBackground)
     }
     
     private var finalAmountsSection: some View {
@@ -352,6 +371,7 @@ struct AddExpenseView: View {
                 } header: {
                     Text("Each Person Owes")
                 }
+                .listRowBackground(Color.cardBackground)
             }
         }
     }
@@ -376,7 +396,6 @@ struct AddExpenseView: View {
     
     private func calculateFinalAmount(for person: Person, total: Double) -> Double? {
         let itemsSubtotal = personSubtotal(for: person)
-        guard itemsSubtotal > 0 else { return nil }
         
         let personSharedTotal = sharedItems
             .filter { $0.sharedByIDs.contains(person.persistentModelID) }
@@ -384,10 +403,15 @@ struct AddExpenseView: View {
         
         let personSubtotal = itemsSubtotal + personSharedTotal
         
+        // If person has no items at all, they don't owe anything
+        guard personSubtotal > 0 else { return nil }
+        
+        // Calculate grand subtotal (all items + all shared)
         let grandSubtotal = calculateItemsSubtotal() + sharedItems.reduce(0) { $0 + $1.amount }
         
         guard grandSubtotal > 0 else { return nil }
         
+        // Apply person's percentage to the total (including tax/tip)
         let percentage = personSubtotal / grandSubtotal
         return percentage * total
     }
@@ -472,14 +496,16 @@ struct AddExpenseView: View {
             
             for tempShared in sharedItems {
                 let sharedItem = SharedItem(name: tempShared.name, amount: tempShared.amount)
+                modelContext.insert(sharedItem)
                 sharedItem.expense = expense
+                
                 for personID in tempShared.sharedByIDs {
                     if let person = trip.participants.first(where: { $0.persistentModelID == personID }) {
                         sharedItem.sharedBy.append(person)
                     }
                 }
+                
                 expense.sharedItems.append(sharedItem)
-                modelContext.insert(sharedItem)
             }
             
             for person in trip.participants {
@@ -541,7 +567,7 @@ struct AddLineItemSheet: View {
                 }
                 
                 Section("Item Details") {
-                    TextField("Item name (e.g., Burger)", text: $itemName)
+                    TextField("Item name (optional)", text: $itemName)
                     TextField("Amount", text: $itemAmount)
                         .keyboardType(.decimalPad)
                 }
@@ -554,12 +580,13 @@ struct AddLineItemSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Add") {
-                        if let amount = Double(itemAmount), !itemName.isEmpty {
-                            onSave(TempLineItem(name: itemName, amount: amount))
+                        if let amount = Double(itemAmount) {
+                            let finalName = itemName.isEmpty ? "Item" : itemName
+                            onSave(TempLineItem(name: finalName, amount: amount))
                             dismiss()
                         }
                     }
-                    .disabled(itemName.isEmpty || Double(itemAmount) == nil)
+                    .disabled(Double(itemAmount) == nil)
                 }
             }
         }
@@ -580,7 +607,7 @@ struct AddSharedItemSheet: View {
         NavigationStack {
             Form {
                 Section("Item Details") {
-                    TextField("Item name (e.g., Nachos)", text: $itemName)
+                    TextField("Item name (optional)", text: $itemName)
                     TextField("Total amount", text: $itemAmount)
                         .keyboardType(.decimalPad)
                 }
@@ -632,13 +659,14 @@ struct AddSharedItemSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Add") {
-                        if let amount = Double(itemAmount), !itemName.isEmpty, !selectedPeople.isEmpty {
+                        if let amount = Double(itemAmount), !selectedPeople.isEmpty {
+                            let finalName = itemName.isEmpty ? "Item" : itemName
                             let names = participants
                                 .filter { selectedPeople.contains($0.persistentModelID) }
                                 .map { $0.name }
                             
                             onSave(TempSharedItem(
-                                name: itemName,
+                                name: finalName,
                                 amount: amount,
                                 sharedByIDs: Array(selectedPeople),
                                 sharedByNames: names
@@ -646,7 +674,7 @@ struct AddSharedItemSheet: View {
                             dismiss()
                         }
                     }
-                    .disabled(itemName.isEmpty || Double(itemAmount) == nil || selectedPeople.isEmpty)
+                    .disabled(Double(itemAmount) == nil || selectedPeople.isEmpty)
                 }
             }
         }

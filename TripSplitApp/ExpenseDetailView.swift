@@ -75,31 +75,12 @@ struct ExpenseDetailView: View {
                 }
                 .listRowBackground(Color.cardBackground)
                 
-                Section("Split Between \(expense.participantCount) People") {
-                    ForEach(expense.getParticipants(from: trip)) { person in
-                        HStack(spacing: 12) {
-                            Circle()
-                                .fill(Color.participantColors[person.color] ?? .blue)
-                                .frame(width: 35, height: 35)
-                            Text(person.name)
-                                .font(.headline)
-                            Spacer()
-                            if let share = expense.getShare(for: person) {
-                                VStack(alignment: .trailing, spacing: 2) {
-                                    Text("$\(share, specifier: "%.2f")")
-                                        .font(.headline)
-                                    if share != expense.amount / Double(expense.participantCount) {
-                                        Text("custom split")
-                                            .font(.caption2)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                }
-                            }
-                        }
-                        .padding(.vertical, 4)
-                    }
+                // Show itemized breakdown if it exists
+                if hasItemizedSplit {
+                    itemizedBreakdownSection
+                } else {
+                    standardSplitSection
                 }
-                .listRowBackground(Color.cardBackground)
             }
             .scrollContentBackground(.hidden)
         }
@@ -127,6 +108,153 @@ struct ExpenseDetailView: View {
         .sheet(isPresented: $showingEditExpense) {
             EditExpenseView(trip: trip, expense: expense)
         }
+    }
+    
+    private var hasItemizedSplit: Bool {
+        // Check if this expense has line items or shared items
+        let hasLineItems = trip.participants.contains { person in
+            !person.lineItems.filter { $0.expense == expense }.isEmpty
+        }
+        let hasSharedItems = !expense.sharedItems.isEmpty
+        return hasLineItems || hasSharedItems
+    }
+    
+    private var itemizedBreakdownSection: some View {
+        Group {
+      
+            // Shared Items
+            if !expense.sharedItems.isEmpty {
+                Section("Shared Items") {
+                    ForEach(expense.sharedItems) { sharedItem in
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text(sharedItem.name)
+                                    .font(.headline)
+                                Spacer()
+                                Text("$\(sharedItem.amount, specifier: "%.2f")")
+                                    .font(.headline)
+                            }
+                            Text("Split between \(sharedItem.sharedBy.count): \(sharedItem.sharedBy.map { $0.name }.joined(separator: ", "))")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Text("$\(sharedItem.amountPerPerson, specifier: "%.2f") each")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.vertical, 2)
+                    }
+                }
+                .listRowBackground(Color.cardBackground)
+            }
+                            
+                    
+            // Individual Items by Person
+            Section("Individual Items") {
+                ForEach(trip.participants.filter { person in
+                    !person.lineItems.filter { $0.expense == expense }.isEmpty
+                }) { person in
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Circle()
+                                .fill(Color.participantColors[person.color] ?? .blue)
+                                .frame(width: 30, height: 30)
+                            Text(person.name)
+                                .font(.headline)
+                                .fontWeight(.semibold)
+                        }
+                        
+                        ForEach(person.lineItems.filter { $0.expense == expense }) { item in
+                            HStack {
+                                Text("• \(item.name)")
+                                    .font(.subheadline)
+                                Spacer()
+                                Text("$\(item.amount, specifier: "%.2f")")
+                                    .font(.subheadline)
+                            }
+                            .foregroundStyle(.secondary)
+                        }
+                        
+                        // Person's subtotal including their share of shared items
+                        let lineItemTotal = person.lineItems.filter { $0.expense == expense }.reduce(0) { $0 + $1.amount }
+                        let sharedTotal = expense.sharedItems
+                            .filter { $0.sharedBy.contains(where: { $0.id == person.id }) }
+                            .reduce(0) { $0 + $1.amountPerPerson }
+                        
+                        HStack {
+                            Text("Subtotal")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            Spacer()
+                            Text("$\(lineItemTotal, specifier: "%.2f")")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                        }
+                        
+                        if sharedTotal > 0 {
+                            HStack {
+                                Text("+ Share of shared items")
+                                    .font(.caption)
+                                Spacer()
+                                Text("$\(sharedTotal, specifier: "%.2f")")
+                                    .font(.caption)
+                            }
+                            .foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+            }
+            .listRowBackground(Color.cardBackground)
+            
+            // Final totals
+            Section("Final Split") {
+                ForEach(expense.getParticipants(from: trip)) { person in
+                    HStack(spacing: 12) {
+                        Circle()
+                            .fill(Color.participantColors[person.color] ?? .blue)
+                            .frame(width: 35, height: 35)
+                        Text(person.name)
+                            .font(.headline)
+                        Spacer()
+                        if let share = expense.getShare(for: person) {
+                            Text("$\(share, specifier: "%.2f")")
+                                .font(.headline)
+                                .foregroundStyle(Color.oceanBlue)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+            }
+            .listRowBackground(Color.cardBackground)
+        }
+    }
+    
+    private var standardSplitSection: some View {
+        Section("Split Between \(expense.participantCount) People") {
+            ForEach(expense.getParticipants(from: trip)) { person in
+                HStack(spacing: 12) {
+                    Circle()
+                        .fill(Color.participantColors[person.color] ?? .blue)
+                        .frame(width: 35, height: 35)
+                    Text(person.name)
+                        .font(.headline)
+                    Spacer()
+                    if let share = expense.getShare(for: person) {
+                        VStack(alignment: .trailing, spacing: 2) {
+                            Text("$\(share, specifier: "%.2f")")
+                                .font(.headline)
+                            if share != expense.amount / Double(expense.participantCount) {
+                                Text("custom split")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+                .padding(.vertical, 4)
+            }
+        }
+        .listRowBackground(Color.cardBackground)
     }
     
     private func categoryIcon(for category: String) -> String {

@@ -4,7 +4,6 @@
 //
 //  Created by Megan Schott on 1/19/26.
 //
-
 import SwiftUI
 import SwiftData
 
@@ -22,10 +21,17 @@ struct EditExpenseView: View {
     @State private var selectedParticipants: Set<PersistentIdentifier> = []
     @State private var splitType: SplitType = .even
     @State private var customAmounts: [PersistentIdentifier: String] = [:]
-    @State private var itemAmounts: [PersistentIdentifier: String] = [:]
-    @State private var subtotal = ""
     
     let categories = ["Food", "Drinks", "Transportation", "Lodging", "Entertainment", "Miscellaneous"]
+    
+    // Check if this is an itemized expense
+    private var isItemizedExpense: Bool {
+        let hasLineItems = trip.participants.contains { person in
+            !person.lineItems.filter { $0.expense == expense }.isEmpty
+        }
+        let hasSharedItems = !expense.sharedItems.isEmpty
+        return hasLineItems || hasSharedItems
+    }
     
     init(trip: Trip, expense: Expense) {
         self.trip = trip
@@ -73,77 +79,104 @@ struct EditExpenseView: View {
                 )
                 .ignoresSafeArea()
                 
-                Form {
-                    Section("Expense Details") {
-                        HStack {
-                            Image(systemName: "dollarsign.circle.fill")
-                                .foregroundStyle(Color.oceanBlue)
-                            TextField("Amount", text: $amount)
-                                .keyboardType(.decimalPad)
-                                .onChange(of: amount) { oldValue, newValue in
-                                    amount = filterNumeric(newValue)
-                                }
-                        }
+                if isItemizedExpense {
+                    // Show message for itemized expenses
+                    VStack(spacing: 20) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 60))
+                            .foregroundStyle(Color.sunsetOrange)
                         
-                        HStack {
-                            Image(systemName: "text.alignleft")
-                                .foregroundStyle(Color.sunsetOrange)
-                            TextField("Description", text: $description)
-                        }
+                        Text("Itemized Expenses Cannot Be Edited")
+                            .font(.title2)
+                            .fontWeight(.semibold)
+                            .multilineTextAlignment(.center)
                         
-                        HStack {
-                            Image(systemName: categoryIcon(for: category))
-                                .foregroundStyle(Color.oceanTeal)
-                            Picker("Category", selection: $category) {
-                                ForEach(categories, id: \.self) { category in
-                                    Text(category).tag(category)
-                                }
-                            }
-                        }
+                        Text("This expense was split by individual items. Editing itemized expenses is not currently supported.")
+                            .font(.body)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal)
+                        
+                        Text("You can delete this expense and create a new one if needed.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal)
                     }
-                    .listRowBackground(Color.cardBackground)
-                    
-                    Section("Who Paid?") {
-                        ForEach(trip.participants) { person in
+                    .padding()
+                } else {
+                    Form {
+                        Section("Expense Details") {
                             HStack {
-                                Circle()
-                                    .fill(Color.participantColors[person.color] ?? .blue)
-                                    .frame(width: 30, height: 30)
-                                Text(person.name)
-                                Spacer()
-                                if selectedPayer == person {
-                                    Image(systemName: "checkmark.circle.fill")
-                                        .foregroundStyle(Color.oceanBlue)
+                                Image(systemName: "dollarsign.circle.fill")
+                                    .foregroundStyle(Color.oceanBlue)
+                                TextField("Amount", text: $amount)
+                                    .keyboardType(.decimalPad)
+                                    .onChange(of: amount) { oldValue, newValue in
+                                        amount = filterNumeric(newValue)
+                                    }
+                            }
+                            
+                            HStack {
+                                Image(systemName: "text.alignleft")
+                                    .foregroundStyle(Color.sunsetOrange)
+                                TextField("Description", text: $description)
+                            }
+                            
+                            HStack {
+                                Image(systemName: categoryIcon(for: category))
+                                    .foregroundStyle(Color.oceanTeal)
+                                Picker("Category", selection: $category) {
+                                    ForEach(categories, id: \.self) { category in
+                                        Text(category).tag(category)
+                                    }
                                 }
                             }
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                selectedPayer = person
+                        }
+                        .listRowBackground(Color.cardBackground)
+                        
+                        Section("Who Paid?") {
+                            ForEach(trip.participants) { person in
+                                HStack {
+                                    Circle()
+                                        .fill(Color.participantColors[person.color] ?? .blue)
+                                        .frame(width: 30, height: 30)
+                                    Text(person.name)
+                                    Spacer()
+                                    if selectedPayer == person {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .foregroundStyle(Color.oceanBlue)
+                                    }
+                                }
+                                .contentShape(Rectangle())
+                                .onTapGesture {
+                                    selectedPayer = person
+                                }
                             }
                         }
-                    }
-                    .listRowBackground(Color.cardBackground)
-                    
-                    Section("Split Type") {
-                        Picker("How to split", selection: $splitType) {
-                            ForEach(SplitType.allCases, id: \.self) { type in
-                                Text(type.rawValue).tag(type)
+                        .listRowBackground(Color.cardBackground)
+                        
+                        Section("Split Type") {
+                            Picker("How to split", selection: $splitType) {
+                                ForEach(SplitType.allCases.filter { $0 != .item }, id: \.self) { type in
+                                    Text(type.rawValue).tag(type)
+                                }
                             }
+                            .pickerStyle(.segmented)
                         }
-                        .pickerStyle(.segmented)
+                        .listRowBackground(Color.cardBackground)
+                        
+                        switch splitType {
+                        case .even:
+                            evenSplitSection
+                        case .custom:
+                            customAmountsSection
+                        case .item:
+                            EmptyView()
+                        }
                     }
-                    .listRowBackground(Color.cardBackground)
-                    
-                    switch splitType {
-                    case .even:
-                        evenSplitSection
-                    case .custom:
-                        customAmountsSection
-                    case .item:
-                        itemSection
-                    }
+                    .scrollContentBackground(.hidden)
                 }
-                .scrollContentBackground(.hidden)
             }
             .navigationTitle("Edit Expense")
             .navigationBarTitleDisplayMode(.inline)
@@ -154,13 +187,15 @@ struct EditExpenseView: View {
                     }
                     .foregroundStyle(Color.moneyOwed)
                 }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
-                        saveExpense()
+                if !isItemizedExpense {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Save") {
+                            saveExpense()
+                        }
+                        .foregroundStyle(Color.oceanBlue)
+                        .fontWeight(.semibold)
+                        .disabled(!canSave)
                     }
-                    .foregroundStyle(Color.oceanBlue)
-                    .fontWeight(.semibold)
-                    .disabled(!canSave)
                 }
             }
         }
@@ -266,83 +301,6 @@ struct EditExpenseView: View {
         .listRowBackground(Color.cardBackground)
     }
     
-    private var itemSection: some View {
-        Section("By Item") {
-            HStack {
-                Image(systemName: "cart.fill")
-                    .foregroundStyle(Color.oceanBlue)
-                TextField("Subtotal (before tax/tip/fees)", text: $subtotal)
-                    .keyboardType(.decimalPad)
-                    .onChange(of: subtotal) { oldValue, newValue in
-                        subtotal = filterNumeric(newValue)
-                    }
-            }
-            
-            ForEach(trip.participants) { person in
-                HStack {
-                    Circle()
-                        .fill(Color.participantColors[person.color] ?? .blue)
-                        .frame(width: 30, height: 30)
-                    Text(person.name)
-                    Spacer()
-                    TextField("Item $", text: Binding(
-                        get: { itemAmounts[person.persistentModelID] ?? "" },
-                        set: {
-                            itemAmounts[person.persistentModelID] = $0
-                            if Double($0) ?? 0 > 0 {
-                                selectedParticipants.insert(person.persistentModelID)
-                            } else {
-                                selectedParticipants.remove(person.persistentModelID)
-                            }
-                        }
-                    ))
-                    .keyboardType(.decimalPad)
-                    .multilineTextAlignment(.trailing)
-                    .frame(width: 80)
-                }
-            }
-            
-            if let sub = Double(subtotal), sub > 0 {
-                let itemTotal = itemAmounts.values.compactMap { Double($0) }.reduce(0, +)
-                HStack {
-                    Text("Assigned")
-                    Spacer()
-                    Text("$\(itemTotal, specifier: "%.2f")")
-                        .fontWeight(.semibold)
-                }
-                HStack {
-                    Text("Remaining")
-                    Spacer()
-                    Text("$\(sub - itemTotal, specifier: "%.2f")")
-                        .fontWeight(.semibold)
-                        .foregroundStyle(abs(sub - itemTotal) < 0.01 ? Color.moneyOwing : Color.moneyOwed)
-                }
-            }
-            
-            if let total = Double(amount), let sub = Double(subtotal), sub > 0 {
-                ForEach(trip.participants.filter { itemAmounts[$0.persistentModelID] != nil && Double(itemAmounts[$0.persistentModelID]!) ?? 0 > 0 }) { person in
-                    if let item = Double(itemAmounts[person.persistentModelID] ?? "0") {
-                        let percentage = (item / sub) * 100
-                        let owes = (item / sub) * total
-                        HStack {
-                            Circle()
-                                .fill(Color.participantColors[person.color] ?? .blue)
-                                .frame(width: 20, height: 20)
-                            Text(person.name)
-                            Spacer()
-                            Text("\(percentage, specifier: "%.1f")% → $\(owes, specifier: "%.2f")")
-                                .font(.caption)
-                                .foregroundStyle(Color.oceanBlue)
-                                .fontWeight(.semibold)
-                        }
-                        .foregroundStyle(.secondary)
-                    }
-                }
-            }
-        }
-        .listRowBackground(Color.cardBackground)
-    }
-    
     private func categoryIcon(for category: String) -> String {
         switch category {
         case "Food": return "fork.knife"
@@ -376,9 +334,7 @@ struct EditExpenseView: View {
             let assigned = customAmounts.values.compactMap { Double($0) }.reduce(0, +)
             return abs(assigned - amountValue) < 0.01
         case .item:
-            guard let sub = Double(subtotal), sub > 0 else { return false }
-            let itemTotal = itemAmounts.values.compactMap { Double($0) }.reduce(0, +)
-            return abs(itemTotal - sub) < 0.01
+            return false
         }
     }
     
@@ -424,19 +380,7 @@ struct EditExpenseView: View {
             }
             
         case .item:
-            if let sub = Double(subtotal), sub > 0 {
-                for person in participantsList {
-                    if let itemStr = itemAmounts[person.persistentModelID],
-                       let itemAmount = Double(itemStr) {
-                        let percentage = itemAmount / sub
-                        let owedAmount = percentage * amountValue
-                        let share = ExpenseShare(person: person, amount: owedAmount)
-                        share.expense = expense
-                        expense.shares.append(share)
-                        modelContext.insert(share)
-                    }
-                }
-            }
+            break // Not supported
         }
         
         try? modelContext.save()
