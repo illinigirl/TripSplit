@@ -471,6 +471,24 @@ struct AddExpenseView: View {
         return filtered
     }
     
+    private func adjustSharesForRounding(shares: [(person: Person, amount: Double)], total: Double) -> [(person: Person, amount: Double)] {
+        guard !shares.isEmpty else { return shares }
+        
+        // Round all shares to 2 decimal places
+        var adjustedShares = shares.map { (person: $0.person, amount: round($0.amount * 100) / 100) }
+        
+        // Calculate the difference due to rounding
+        let roundedTotal = adjustedShares.reduce(0) { $0 + $1.amount }
+        let difference = total - roundedTotal
+        
+        // Adjust the last person's share to absorb the rounding difference
+        if let lastIndex = adjustedShares.indices.last {
+            adjustedShares[lastIndex].amount += difference
+        }
+        
+        return adjustedShares
+    }
+    
     private var canSave: Bool {
         guard let amountValue = Double(amount), amountValue > 0 else { return false }
         guard !description.isEmpty else { return false }
@@ -535,12 +553,21 @@ struct AddExpenseView: View {
         case .item:
             for person in trip.participants {
                 if let items = personLineItems[person.persistentModelID] {
-                    for tempItem in items {
-                        let lineItem = LineItem(name: tempItem.name, amount: tempItem.amount)
-                        lineItem.person = person
-                        lineItem.expense = expense
-                        person.lineItems.append(lineItem)
-                        modelContext.insert(lineItem)
+                    // Calculate shares for each person with items
+                    var sharesData: [(person: Person, amount: Double)] = []
+                    for person in trip.participants {
+                        if let finalAmount = calculateFinalAmount(for: person, total: amountValue) {
+                            sharesData.append((person: person, amount: finalAmount))
+                        }
+                    }
+
+                    // Adjust for rounding and create ExpenseShare objects
+                    let adjustedShares = adjustSharesForRounding(shares: sharesData, total: amountValue)
+                    for shareData in adjustedShares {
+                        let share = ExpenseShare(person: shareData.person, amount: shareData.amount)
+                        share.expense = expense
+                        expense.shares.append(share)
+                        modelContext.insert(share)
                     }
                 }
             }

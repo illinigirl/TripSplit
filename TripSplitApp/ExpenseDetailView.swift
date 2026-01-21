@@ -165,9 +165,9 @@ struct ExpenseDetailView: View {
                             }
                             
                             // DEBUG INFO
-                            Text("DEBUG: Count = \(sharedByCount)")
-                                .font(.caption2)
-                                .foregroundStyle(.orange)
+                            //Text("DEBUG: Count = \(sharedByCount)")
+                                //.font(.caption2)
+                                //.foregroundStyle(.orange)
                             
                             if sharedByCount > 0 {
                                 Text("Split between \(sharedByCount): \(sharedByPeople.map { $0.name }.joined(separator: ", "))")
