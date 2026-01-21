@@ -30,6 +30,10 @@ struct EditExpenseView: View {
     @State private var selectedPersonID: PersistentIdentifier?
     @State private var showingAddSharedItemSheet = false
     
+    // For receipt image
+    @State private var showingReceiptPicker = false
+    @State private var receiptImage: UIImage?
+    
     let categories = ["Food", "Drinks", "Transportation", "Lodging", "Entertainment", "Miscellaneous"]
     
     init(trip: Trip, expense: Expense) {
@@ -41,6 +45,12 @@ struct EditExpenseView: View {
         _description = State(initialValue: expense.expenseDescription)
         _category = State(initialValue: expense.category)
         _selectedPayer = State(initialValue: expense.paidBy)
+        
+        // Load existing receipt image
+        if let imageData = expense.receiptImageData,
+           let image = UIImage(data: imageData) {
+            _receiptImage = State(initialValue: image)
+        }
         
         // Determine split type and populate accordingly
         let participants = expense.getParticipants(from: trip)
@@ -145,6 +155,41 @@ struct EditExpenseView: View {
                     }
                     .listRowBackground(Color.cardBackground)
                     
+                    Section("Receipt (Optional)") {
+                        if let image = receiptImage {
+                            HStack {
+                                Image(uiImage: image)
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(height: 100)
+                                    .cornerRadius(8)
+                                
+                                Spacer()
+                                
+                                Button(action: {
+                                    showingReceiptPicker = true
+                                }) {
+                                    Text("Change")
+                                        .foregroundStyle(Color.oceanBlue)
+                                }
+                                
+                                Button(action: {
+                                    receiptImage = nil
+                                }) {
+                                    Image(systemName: "trash")
+                                        .foregroundStyle(Color.moneyOwed)
+                                }
+                            }
+                        } else {
+                            Button(action: {
+                                showingReceiptPicker = true
+                            }) {
+                                Label("Add Receipt Photo", systemImage: "camera.fill")
+                            }
+                        }
+                    }
+                    .listRowBackground(Color.cardBackground)
+                    
                     Section("Who Paid?") {
                         ForEach(trip.participants) { person in
                             HStack {
@@ -215,6 +260,11 @@ struct EditExpenseView: View {
             .sheet(isPresented: $showingAddSharedItemSheet) {
                 AddSharedItemSheet(participants: trip.participants) { item in
                     sharedItems.append(item)
+                }
+            }
+            .sheet(isPresented: $showingReceiptPicker) {
+                ImagePickerSheet { image in
+                    receiptImage = image
                 }
             }
         }
@@ -568,6 +618,13 @@ struct EditExpenseView: View {
         expense.category = category
         expense.paidBy = payer
         expense.date = Date()
+        
+        // Update receipt image
+        if let image = receiptImage {
+            expense.receiptImageData = image.compressedForReceipt()
+        } else {
+            expense.receiptImageData = nil
+        }
         
         // Delete old shares
         for share in expense.shares {

@@ -92,6 +92,7 @@ class Expense: Identifiable {
     @Relationship(deleteRule: .cascade, inverse: \ExpenseShare.expense) var shares: [ExpenseShare] = []
     @Relationship(deleteRule: .cascade) var sharedItems: [SharedItem] = []
     var trip: Trip?
+    var receiptImageData: Data?  // NEW - stores the receipt image
     
     init(amount: Double, description: String, date: Date = Date(), category: String = "other", paidBy: Person? = nil) {
         self.amount = amount

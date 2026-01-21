@@ -36,6 +36,10 @@ struct AddExpenseView: View {
     @State private var selectedPersonID: PersistentIdentifier?
     @State private var showingAddSharedItemSheet = false
     
+    // For receipt image
+    @State private var showingReceiptPicker = false
+    @State private var receiptImage: UIImage?
+    
     let categories = ["Food", "Drinks", "Transportation", "Lodging", "Entertainment", "Miscellaneous"]
     
     var body: some View {
@@ -61,6 +65,41 @@ struct AddExpenseView: View {
                         Picker("Category", selection: $category) {
                             ForEach(categories, id: \.self) { category in
                                 Text(category).tag(category)
+                            }
+                        }
+                    }
+                    .listRowBackground(Color.cardBackground)
+                    
+                    Section("Receipt (Optional)") {
+                        if let image = receiptImage {
+                            HStack {
+                                Image(uiImage: image)
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(height: 100)
+                                    .cornerRadius(8)
+                                
+                                Spacer()
+                                
+                                Button(action: {
+                                    showingReceiptPicker = true
+                                }) {
+                                    Text("Change")
+                                        .foregroundStyle(Color.oceanBlue)
+                                }
+                                
+                                Button(action: {
+                                    receiptImage = nil
+                                }) {
+                                    Image(systemName: "trash")
+                                        .foregroundStyle(Color.moneyOwed)
+                                }
+                            }
+                        } else {
+                            Button(action: {
+                                showingReceiptPicker = true
+                            }) {
+                                Label("Add Receipt Photo", systemImage: "camera.fill")
                             }
                         }
                     }
@@ -131,6 +170,12 @@ struct AddExpenseView: View {
             .sheet(isPresented: $showingAddSharedItemSheet) {
                 AddSharedItemSheet(participants: trip.participants) { item in
                     sharedItems.append(item)
+                }
+            }
+            
+            .sheet(isPresented: $showingReceiptPicker) {
+                ImagePickerSheet { image in
+                    receiptImage = image
                 }
             }
         }
@@ -454,6 +499,11 @@ struct AddExpenseView: View {
             category: category,
             paidBy: payer
         )
+        
+        // Save receipt image if present
+        if let image = receiptImage {
+            expense.receiptImageData = image.compressedForReceipt()
+        }
         
         expense.trip = trip
         modelContext.insert(expense)

@@ -14,6 +14,7 @@ struct ExpenseDetailView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @State private var showingEditExpense = false
+    @State private var showingFullReceipt = false
     
     var body: some View {
         ZStack {
@@ -56,6 +57,24 @@ struct ExpenseDetailView: View {
                     }
                 }
                 .listRowBackground(Color.cardBackground)
+                
+                // Receipt section
+                if let imageData = expense.receiptImageData,
+                   let image = UIImage(data: imageData) {
+                    Section("Receipt") {
+                        Button(action: {
+                            showingFullReceipt = true
+                        }) {
+                            Image(uiImage: image)
+                                .resizable()
+                                .scaledToFit()
+                                .frame(maxHeight: 200)
+                                .cornerRadius(8)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .listRowBackground(Color.cardBackground)
+                }
                 
                 Section("Paid By") {
                     if let payer = expense.paidBy {
@@ -107,6 +126,12 @@ struct ExpenseDetailView: View {
         }
         .sheet(isPresented: $showingEditExpense) {
             EditExpenseView(trip: trip, expense: expense)
+        }
+        .sheet(isPresented: $showingFullReceipt) {
+            if let imageData = expense.receiptImageData,
+               let image = UIImage(data: imageData) {
+                FullScreenImageView(image: image)
+            }
         }
     }
     
@@ -310,5 +335,68 @@ struct ExpenseDetailView: View {
             trip.expenses.remove(at: index)
         }
         dismiss()
+    }
+}
+
+// MARK: - Full Screen Image View
+struct FullScreenImageView: View {
+    @Environment(\.dismiss) private var dismiss
+    let image: UIImage
+    
+    @State private var scale: CGFloat = 1.0
+    @State private var lastScale: CGFloat = 1.0
+    @State private var offset: CGSize = .zero
+    @State private var lastOffset: CGSize = .zero
+    
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                Color.black.ignoresSafeArea()
+                
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .scaleEffect(scale)
+                    .offset(offset)
+                    .gesture(
+                        MagnificationGesture()
+                            .onChanged { value in
+                                scale = lastScale * value
+                            }
+                            .onEnded { _ in
+                                lastScale = scale
+                                if scale < 1.0 {
+                                    withAnimation {
+                                        scale = 1.0
+                                        lastScale = 1.0
+                                        offset = .zero
+                                        lastOffset = .zero
+                                    }
+                                }
+                            }
+                    )
+                    .gesture(
+                        DragGesture()
+                            .onChanged { value in
+                                offset = CGSize(
+                                    width: lastOffset.width + value.translation.width,
+                                    height: lastOffset.height + value.translation.height
+                                )
+                            }
+                            .onEnded { _ in
+                                lastOffset = offset
+                            }
+                    )
+            }
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                    .foregroundStyle(.white)
+                }
+            }
+        }
     }
 }
