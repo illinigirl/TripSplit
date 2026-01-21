@@ -387,13 +387,22 @@ struct EditExpenseView: View {
                 Label("Add Shared Item", systemImage: "plus.circle.fill")
             }
             
-            ForEach(sharedItems) { item in
+            ForEach(Array(sharedItems.enumerated()), id: \.element.id) { index, item in
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
                         Text(item.name)
                         Spacer()
                         Text("$\(item.amount, specifier: "%.2f")")
                             .fontWeight(.medium)
+                        
+                        Button(action: {
+                            sharedItems.remove(at: index)
+                        }) {
+                            Image(systemName: "trash.circle.fill")
+                                .foregroundStyle(.red)
+                                .font(.body)
+                        }
+                        .buttonStyle(.plain)
                     }
                     Text("Split between: \(item.sharedByNames.joined(separator: ", "))")
                         .font(.caption)
@@ -403,71 +412,97 @@ struct EditExpenseView: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            .onDelete { indexSet in
-                sharedItems.remove(atOffsets: indexSet)
-            }
         } header: {
             Text("Shared Items (Appetizers, etc.)")
         }
         .listRowBackground(Color.cardBackground)
     }
+           
     
     private var individualItemsSection: some View {
         Section {
             ForEach(trip.participants) { person in
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Circle()
-                            .fill(Color(person.color))
-                            .frame(width: 25, height: 25)
-                        Text(person.name)
-                            .fontWeight(.medium)
-                        Spacer()
-                        Button(action: {
-                            selectedPersonID = person.persistentModelID
-                        }) {
-                            Image(systemName: "plus.circle.fill")
-                                .foregroundStyle(.blue)
-                        }
-                    }
-                    
-                    if let items = personLineItems[person.persistentModelID], !items.isEmpty {
-                        ForEach(items) { item in
-                            HStack {
-                                Text("• \(item.name)")
-                                    .font(.subheadline)
-                                Spacer()
-                                Text("$\(item.amount, specifier: "%.2f")")
-                                    .font(.subheadline)
-                            }
-                            .foregroundStyle(.secondary)
-                        }
-                        .onDelete { indexSet in
-                            personLineItems[person.persistentModelID]?.remove(atOffsets: indexSet)
-                            if personLineItems[person.persistentModelID]?.isEmpty == true {
-                                personLineItems[person.persistentModelID] = nil
+                // Check if person has any items OR shared items
+                let hasLineItems = personLineItems[person.persistentModelID] != nil && !personLineItems[person.persistentModelID]!.isEmpty
+                let hasSharedItems = sharedItems.contains(where: { $0.sharedByIDs.contains(person.persistentModelID) })
+                
+                if hasLineItems || hasSharedItems {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Circle()
+                                .fill(Color(person.color))
+                                .frame(width: 25, height: 25)
+                            Text(person.name)
+                                .fontWeight(.medium)
+                            Spacer()
+                            Button(action: {
+                                selectedPersonID = person.persistentModelID
+                            }) {
+                                Image(systemName: "plus.circle.fill")
+                                    .foregroundStyle(.blue)
                             }
                         }
                         
-                        HStack {
-                            Text("Subtotal")
-                                .font(.subheadline)
-                                .fontWeight(.medium)
-                            Spacer()
-                            Text("$\(personSubtotal(for: person), specifier: "%.2f")")
-                                .font(.subheadline)
-                                .fontWeight(.medium)
+                        // Show individual items if they exist
+                        if let items = personLineItems[person.persistentModelID], !items.isEmpty {
+                            ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                                HStack {
+                                    Text("• \(item.name)")
+                                        .font(.subheadline)
+                                    Spacer()
+                                    Text("$\(item.amount, specifier: "%.2f")")
+                                        .font(.subheadline)
+                                    
+                                    Button(action: {
+                                        personLineItems[person.persistentModelID]?.remove(at: index)
+                                        if personLineItems[person.persistentModelID]?.isEmpty == true {
+                                            personLineItems[person.persistentModelID] = nil
+                                        }
+                                    }) {
+                                        Image(systemName: "trash.circle.fill")
+                                            .foregroundStyle(.red)
+                                            .font(.body)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                                .foregroundStyle(.secondary)
+                            }
+                            
+                            HStack {
+                                Text("Subtotal")
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                                Spacer()
+                                Text("$\(personSubtotal(for: person), specifier: "%.2f")")
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                            }
+                        }
+                        
+                        // Show shared items portion
+                        if hasSharedItems {
+                            let personSharedTotal = sharedItems
+                                .filter { $0.sharedByIDs.contains(person.persistentModelID) }
+                                .reduce(0) { $0 + $1.amountPerPerson }
+                            
+                            HStack {
+                                Text(hasLineItems ? "+ Share of shared items" : "Share of shared items")
+                                    .font(.caption)
+                                Spacer()
+                                Text("$\(personSharedTotal, specifier: "%.2f")")
+                                    .font(.caption)
+                            }
+                            .foregroundStyle(.secondary)
                         }
                     }
+                    .padding(.vertical, 4)
                 }
-                .padding(.vertical, 4)
             }
         } header: {
             Text("Individual Items")
         }
         .listRowBackground(Color.cardBackground)
     }
-    
     private var summarySection: some View {
         Section {
             HStack {
@@ -617,7 +652,8 @@ struct EditExpenseView: View {
         expense.expenseDescription = description
         expense.category = category
         expense.paidBy = payer
-        expense.date = Date()
+        //don't update date on edit
+        //expense.date = Date()
         
         // Update receipt image
         if let image = receiptImage {
@@ -693,14 +729,20 @@ struct EditExpenseView: View {
                 modelContext.insert(sharedItem)
                 sharedItem.expense = expense
                 
+                // Build the sharedBy array by finding people in the trip
                 for personID in tempShared.sharedByIDs {
                     if let person = trip.participants.first(where: { $0.persistentModelID == personID }) {
                         sharedItem.sharedBy.append(person)
+                        // Also set the reverse relationship
+                        person.sharedItems.append(sharedItem)
                     }
                 }
                 
                 expense.sharedItems.append(sharedItem)
             }
+
+            // Save immediately after setting up relationships
+            try? modelContext.save()
             
             // Create ExpenseShare for each person with items
             for person in trip.participants {

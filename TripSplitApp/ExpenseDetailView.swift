@@ -146,10 +146,15 @@ struct ExpenseDetailView: View {
     
     private var itemizedBreakdownSection: some View {
         Group {
-            // Shared Items
+            // Shared Items - force load the relationship
+            // Shared Items - force load the relationship
+            // Shared Items - force load the relationship
             if !expense.sharedItems.isEmpty {
                 Section("Shared Items") {
                     ForEach(expense.sharedItems) { sharedItem in
+                        let sharedByPeople = sharedItem.sharedBy // Force load
+                        let sharedByCount = sharedByPeople.count
+                        
                         VStack(alignment: .leading, spacing: 4) {
                             HStack {
                                 Text(sharedItem.name)
@@ -158,73 +163,97 @@ struct ExpenseDetailView: View {
                                 Text("$\(sharedItem.amount, specifier: "%.2f")")
                                     .font(.headline)
                             }
-                            Text("Split between \(sharedItem.sharedBy.count): \(sharedItem.sharedBy.map { $0.name }.joined(separator: ", "))")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            Text("$\(sharedItem.amountPerPerson, specifier: "%.2f") each")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                            
+                            // DEBUG INFO
+                            Text("DEBUG: Count = \(sharedByCount)")
+                                .font(.caption2)
+                                .foregroundStyle(.orange)
+                            
+                            if sharedByCount > 0 {
+                                Text("Split between \(sharedByCount): \(sharedByPeople.map { $0.name }.joined(separator: ", "))")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                Text("$\(sharedItem.amountPerPerson, specifier: "%.2f") each")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            } else {
+                                Text("Count is 0 - relationship not saved")
+                                    .font(.caption)
+                                    .foregroundStyle(.red)
+                            }
                         }
                         .padding(.vertical, 2)
                     }
                 }
                 .listRowBackground(Color.cardBackground)
             }
+                   
             
             // Individual Items by Person
+            // Individual Items by Person
             Section("Individual Items") {
-                ForEach(trip.participants.filter { person in
-                    !person.lineItems.filter { $0.expense == expense }.isEmpty
-                }) { person in
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Circle()
-                                .fill(Color.participantColors[person.color] ?? .blue)
-                                .frame(width: 30, height: 30)
-                            Text(person.name)
-                                .font(.headline)
-                                .fontWeight(.semibold)
-                        }
-                        
-                        ForEach(person.lineItems.filter { $0.expense == expense }) { item in
-                            HStack {
-                                Text("• \(item.name)")
-                                    .font(.subheadline)
-                                Spacer()
-                                Text("$\(item.amount, specifier: "%.2f")")
-                                    .font(.subheadline)
-                            }
-                            .foregroundStyle(.secondary)
-                        }
-                        
-                        // Person's subtotal including their share of shared items
-                        let lineItemTotal = person.lineItems.filter { $0.expense == expense }.reduce(0) { $0 + $1.amount }
-                        let sharedTotal = expense.sharedItems
-                            .filter { $0.sharedBy.contains(where: { $0.id == person.id }) }
-                            .reduce(0) { $0 + $1.amountPerPerson }
-                        
-                        HStack {
-                            Text("Subtotal")
-                                .font(.subheadline)
-                                .fontWeight(.medium)
-                            Spacer()
-                            Text("$\(lineItemTotal, specifier: "%.2f")")
-                                .font(.subheadline)
-                                .fontWeight(.medium)
-                        }
-                        
-                        if sharedTotal > 0 {
-                            HStack {
-                                Text("+ Share of shared items")
-                                    .font(.caption)
-                                Spacer()
-                                Text("$\(sharedTotal, specifier: "%.2f")")
-                                    .font(.caption)
-                            }
-                            .foregroundStyle(.secondary)
-                        }
+                ForEach(trip.participants) { person in
+                    // Check if person has any items OR shared items
+                    let lineItems = person.lineItems.filter { $0.expense == expense }
+                    let hasLineItems = !lineItems.isEmpty
+                    let relevantSharedItems = expense.sharedItems.filter { sharedItem in
+                        sharedItem.sharedBy.contains(where: { $0.id == person.id })
                     }
-                    .padding(.vertical, 4)
+                    let hasSharedItems = !relevantSharedItems.isEmpty
+                    
+                    if hasLineItems || hasSharedItems {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Circle()
+                                    .fill(Color.participantColors[person.color] ?? .blue)
+                                    .frame(width: 30, height: 30)
+                                Text(person.name)
+                                    .font(.headline)
+                                    .fontWeight(.semibold)
+                            }
+                            
+                            // Show individual items if they exist
+                            if hasLineItems {
+                                ForEach(lineItems) { item in
+                                    HStack {
+                                        Text("• \(item.name)")
+                                            .font(.subheadline)
+                                        Spacer()
+                                        Text("$\(item.amount, specifier: "%.2f")")
+                                            .font(.subheadline)
+                                    }
+                                    .foregroundStyle(.secondary)
+                                }
+                                
+                                let lineItemTotal = lineItems.reduce(0) { $0 + $1.amount }
+                                
+                                HStack {
+                                    Text("Subtotal")
+                                        .font(.subheadline)
+                                        .fontWeight(.medium)
+                                    Spacer()
+                                    Text("$\(lineItemTotal, specifier: "%.2f")")
+                                        .font(.subheadline)
+                                        .fontWeight(.medium)
+                                }
+                            }
+                            
+                            // Show shared items portion
+                            if hasSharedItems {
+                                let sharedTotal = relevantSharedItems.reduce(0) { $0 + $1.amountPerPerson }
+                                
+                                HStack {
+                                    Text(hasLineItems ? "+ Share of shared items" : "Share of shared items")
+                                        .font(.caption)
+                                    Spacer()
+                                    Text("$\(sharedTotal, specifier: "%.2f")")
+                                        .font(.caption)
+                                }
+                                .foregroundStyle(.secondary)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
                 }
             }
             .listRowBackground(Color.cardBackground)

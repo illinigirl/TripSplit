@@ -550,14 +550,20 @@ struct AddExpenseView: View {
                 modelContext.insert(sharedItem)
                 sharedItem.expense = expense
                 
+                // Build the sharedBy array by finding people in the trip
                 for personID in tempShared.sharedByIDs {
                     if let person = trip.participants.first(where: { $0.persistentModelID == personID }) {
                         sharedItem.sharedBy.append(person)
+                        // Also set the reverse relationship
+                        person.sharedItems.append(sharedItem)
                     }
                 }
                 
                 expense.sharedItems.append(sharedItem)
             }
+
+            // Save immediately after setting up relationships
+            try? modelContext.save()
             
             for person in trip.participants {
                 if let finalAmount = calculateFinalAmount(for: person, total: amountValue) {
