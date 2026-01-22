@@ -147,6 +147,8 @@ class SharedItem: Identifiable {
     var amount: Double
     @Relationship(deleteRule: .nullify, inverse: \Person.sharedItems) var sharedBy: [Person] = []
     var expense: Expense?
+    var customShares: [String: Int] = [:] // NEW - stores personID -> share count
+    var isCustomSplit: Bool = false // NEW - tracks if using custom shares
     
     init(name: String, amount: Double) {
         self.name = name
@@ -155,7 +157,28 @@ class SharedItem: Identifiable {
     
     var amountPerPerson: Double {
         guard !sharedBy.isEmpty else { return 0 }
-        return amount / Double(sharedBy.count)
+        
+        if isCustomSplit && !customShares.isEmpty {
+            let totalShares = customShares.values.reduce(0, +)
+            guard totalShares > 0 else { return 0 }
+            return amount / Double(totalShares)
+        } else {
+            return amount / Double(sharedBy.count)
+        }
+    }
+    
+    func amountFor(person: Person) -> Double {
+        guard sharedBy.contains(where: { $0.id == person.id }) else { return 0 }
+        
+        // Use person's name as the key - simple and stable
+        if isCustomSplit && !customShares.isEmpty {
+            let personShares = customShares[person.name] ?? 1
+            let totalShares = customShares.values.reduce(0, +)
+            guard totalShares > 0 else { return 0 }
+            return amount * Double(personShares) / Double(totalShares)
+        } else {
+            return amountPerPerson
+        }
     }
 }
 

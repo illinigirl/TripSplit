@@ -4,6 +4,7 @@
 //
 //  Created by Megan Schott on 1/19/26.
 //
+
 import SwiftUI
 import SwiftData
 
@@ -80,18 +81,33 @@ struct EditExpenseView: View {
             _personLineItems = State(initialValue: loadedLineItems)
             
             // Load shared items
+            
+            
+            // Load shared items
             var loadedSharedItems: [TempSharedItem] = []
             for sharedItem in expense.sharedItems {
                 let sharedByIDs = sharedItem.sharedBy.map { $0.persistentModelID }
                 let sharedByNames = sharedItem.sharedBy.map { $0.name }
+                
+                // Load custom shares from the database
+                var shares: [PersistentIdentifier: Int] = [:]
+                
+                for person in sharedItem.sharedBy {
+                    let shareCount = sharedItem.customShares[person.name] ?? 1
+                    shares[person.persistentModelID] = shareCount
+                }
+                
                 loadedSharedItems.append(TempSharedItem(
                     name: sharedItem.name,
                     amount: sharedItem.amount,
                     sharedByIDs: sharedByIDs,
-                    sharedByNames: sharedByNames
+                    sharedByNames: sharedByNames,
+                    shares: shares,
+                    isCustomSplit: sharedItem.isCustomSplit  // Use actual saved value
                 ))
             }
             _sharedItems = State(initialValue: loadedSharedItems)
+            
         } else {
             // Check if it's an even split
             let shares = expense.shares
@@ -404,12 +420,27 @@ struct EditExpenseView: View {
                         }
                         .buttonStyle(.plain)
                     }
-                    Text("Split between: \(item.sharedByNames.joined(separator: ", "))")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text("$\(item.amountPerPerson, specifier: "%.2f") each")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    
+                    if item.isCustomSplit {
+                        // Show custom shares breakdown
+                        let breakdown = item.sharedByIDs.compactMap { id -> String? in
+                            guard let person = trip.participants.first(where: { $0.persistentModelID == id }) else { return nil }
+                            let shares = item.shares[id] ?? 1
+                            let amount = item.amountFor(personID: id)
+                            return String(format: "%@ (%d×) $%.2f", person.name, shares, amount)
+                        }
+                        Text(breakdown.joined(separator: ", "))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        // Show even split
+                        Text("Split between: \(item.sharedByNames.joined(separator: ", "))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text("$\(item.amountPerPerson, specifier: "%.2f") each")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
         } header: {
@@ -417,7 +448,6 @@ struct EditExpenseView: View {
         }
         .listRowBackground(Color.cardBackground)
     }
-           
     
     private var individualItemsSection: some View {
         Section {
@@ -483,7 +513,7 @@ struct EditExpenseView: View {
                         if hasSharedItems {
                             let personSharedTotal = sharedItems
                                 .filter { $0.sharedByIDs.contains(person.persistentModelID) }
-                                .reduce(0) { $0 + $1.amountPerPerson }
+                                .reduce(0) { $0 + $1.amountFor(personID: person.persistentModelID) }
                             
                             HStack {
                                 Text(hasLineItems ? "+ Share of shared items" : "Share of shared items")
@@ -503,6 +533,7 @@ struct EditExpenseView: View {
         }
         .listRowBackground(Color.cardBackground)
     }
+    
     private var summarySection: some View {
         Section {
             HStack {
@@ -589,9 +620,10 @@ struct EditExpenseView: View {
     private func calculateFinalAmount(for person: Person, total: Double) -> Double? {
         let itemsSubtotal = personSubtotal(for: person)
         
+        // Calculate person's share of shared items using new method
         let personSharedTotal = sharedItems
             .filter { $0.sharedByIDs.contains(person.persistentModelID) }
-            .reduce(0) { $0 + $1.amountPerPerson }
+            .reduce(0) { $0 + $1.amountFor(personID: person.persistentModelID) }
         
         let personSubtotal = itemsSubtotal + personSharedTotal
         
@@ -603,6 +635,24 @@ struct EditExpenseView: View {
         
         let percentage = personSubtotal / grandSubtotal
         return percentage * total
+    }
+    
+    private func adjustSharesForRounding(shares: [(person: Person, amount: Double)], total: Double) -> [(person: Person, amount: Double)] {
+        guard !shares.isEmpty else { return shares }
+        
+        // Round all shares to 2 decimal places
+        var adjustedShares = shares.map { (person: $0.person, amount: round($0.amount * 100) / 100) }
+        
+        // Calculate the difference due to rounding
+        let roundedTotal = adjustedShares.reduce(0) { $0 + $1.amount }
+        let difference = total - roundedTotal
+        
+        // Adjust the last person's share to absorb the rounding difference
+        if let lastIndex = adjustedShares.indices.last {
+            adjustedShares[lastIndex].amount += difference
+        }
+        
+        return adjustedShares
     }
     
     private func categoryIcon(for category: String) -> String {
@@ -623,23 +673,6 @@ struct EditExpenseView: View {
             return String(parts[0]) + "." + parts[1...].joined()
         }
         return filtered
-    }
-    private func adjustSharesForRounding(shares: [(person: Person, amount: Double)], total: Double) -> [(person: Person, amount: Double)] {
-        guard !shares.isEmpty else { return shares }
-        
-        // Round all shares to 2 decimal places
-        var adjustedShares = shares.map { (person: $0.person, amount: round($0.amount * 100) / 100) }
-        
-        // Calculate the difference due to rounding
-        let roundedTotal = adjustedShares.reduce(0) { $0 + $1.amount }
-        let difference = total - roundedTotal
-        
-        // Adjust the last person's share to absorb the rounding difference
-        if let lastIndex = adjustedShares.indices.last {
-            adjustedShares[lastIndex].amount += difference
-        }
-        
-        return adjustedShares
     }
     
     private var canSave: Bool {
@@ -669,8 +702,7 @@ struct EditExpenseView: View {
         expense.expenseDescription = description
         expense.category = category
         expense.paidBy = payer
-        //don't update date on edit
-        //expense.date = Date()
+        // Don't update date on edit
         
         // Update receipt image
         if let image = receiptImage {
@@ -730,21 +762,12 @@ struct EditExpenseView: View {
             // Save line items
             for person in trip.participants {
                 if let items = personLineItems[person.persistentModelID] {
-                    // Calculate shares for each person with items
-                    var sharesData: [(person: Person, amount: Double)] = []
-                    for person in trip.participants {
-                        if let finalAmount = calculateFinalAmount(for: person, total: amountValue) {
-                            sharesData.append((person: person, amount: finalAmount))
-                        }
-                    }
-
-                    // Adjust for rounding and create ExpenseShare objects
-                    let adjustedShares = adjustSharesForRounding(shares: sharesData, total: amountValue)
-                    for shareData in adjustedShares {
-                        let share = ExpenseShare(person: shareData.person, amount: shareData.amount)
-                        share.expense = expense
-                        expense.shares.append(share)
-                        modelContext.insert(share)
+                    for tempItem in items {
+                        let lineItem = LineItem(name: tempItem.name, amount: tempItem.amount)
+                        lineItem.person = person
+                        lineItem.expense = expense
+                        person.lineItems.append(lineItem)
+                        modelContext.insert(lineItem)
                     }
                 }
             }
@@ -752,32 +775,43 @@ struct EditExpenseView: View {
             // Save shared items
             for tempShared in sharedItems {
                 let sharedItem = SharedItem(name: tempShared.name, amount: tempShared.amount)
+                sharedItem.isCustomSplit = tempShared.isCustomSplit
                 modelContext.insert(sharedItem)
                 sharedItem.expense = expense
                 
-                // Build the sharedBy array by finding people in the trip
+                // Build customShares dictionary with string keys
+                var customSharesDict: [String: Int] = [:]
+                
                 for personID in tempShared.sharedByIDs {
                     if let person = trip.participants.first(where: { $0.persistentModelID == personID }) {
                         sharedItem.sharedBy.append(person)
-                        // Also set the reverse relationship
                         person.sharedItems.append(sharedItem)
+                        
+                        // Store custom shares using string representation of ID
+                        let shares = tempShared.shares[personID] ?? 1
+                        customSharesDict[person.name] = shares
                     }
                 }
                 
+                sharedItem.customShares = customSharesDict
                 expense.sharedItems.append(sharedItem)
             }
-
-            // Save immediately after setting up relationships
-            try? modelContext.save()
             
-            // Create ExpenseShare for each person with items
+            // Calculate shares for each person with items
+            var sharesData: [(person: Person, amount: Double)] = []
             for person in trip.participants {
                 if let finalAmount = calculateFinalAmount(for: person, total: amountValue) {
-                    let share = ExpenseShare(person: person, amount: finalAmount)
-                    share.expense = expense
-                    expense.shares.append(share)
-                    modelContext.insert(share)
+                    sharesData.append((person: person, amount: finalAmount))
                 }
+            }
+            
+            // Adjust for rounding and create ExpenseShare objects
+            let adjustedShares = adjustSharesForRounding(shares: sharesData, total: amountValue)
+            for shareData in adjustedShares {
+                let share = ExpenseShare(person: shareData.person, amount: shareData.amount)
+                share.expense = expense
+                expense.shares.append(share)
+                modelContext.insert(share)
             }
         }
         

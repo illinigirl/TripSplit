@@ -149,10 +149,12 @@ struct ExpenseDetailView: View {
             // Shared Items - force load the relationship
             // Shared Items - force load the relationship
             // Shared Items - force load the relationship
+            //start here
+            // Shared Items
             if !expense.sharedItems.isEmpty {
                 Section("Shared Items") {
                     ForEach(expense.sharedItems) { sharedItem in
-                        let sharedByPeople = sharedItem.sharedBy // Force load
+                        let sharedByPeople = sharedItem.sharedBy
                         let sharedByCount = sharedByPeople.count
                         
                         VStack(alignment: .leading, spacing: 4) {
@@ -164,22 +166,42 @@ struct ExpenseDetailView: View {
                                     .font(.headline)
                             }
                             
-                            // DEBUG INFO
-                            //Text("DEBUG: Count = \(sharedByCount)")
-                                //.font(.caption2)
-                                //.foregroundStyle(.orange)
-                            
-                            if sharedByCount > 0 {
+                            if sharedItem.isCustomSplit {
+                                // Show custom shares breakdown
+                                //start debug
+                                
+                              //  Text("DEBUG isCustomSplit: \(sharedItem.isCustomSplit)")
+                              //      .font(.caption2)
+                              //      .foregroundStyle(.orange)
+                              //  Text("DEBUG customShares: \(sharedItem.customShares.description)")
+                              //      .font(.caption2)
+                              //      .foregroundStyle(.orange)
+                              //  ForEach(sharedByPeople, id: \.id) { person in
+                              //      let personIDString = person.persistentModelID.hashValue.description
+                               //     let shares = sharedItem.customShares[personIDString] ?? 999
+                               //     Text("DEBUG \(person.name): ID=\(personIDString) shares=\(shares)")
+                              //          .font(.caption2)
+                               //         .foregroundStyle(.orange)
+                                //}
+                                //end debug
+                    
+                                let breakdown = sharedByPeople.compactMap { person -> String? in
+                                    let shares = sharedItem.customShares[person.name] ?? 1
+                                    let amount = sharedItem.amountFor(person: person)
+                                    return String(format: "%@ (%d×) $%.2f", person.name, shares, amount)
+                                }
+                                
+                                Text(breakdown.joined(separator: ", "))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            } else {
+                                // Show even split
                                 Text("Split between \(sharedByCount): \(sharedByPeople.map { $0.name }.joined(separator: ", "))")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                                 Text("$\(sharedItem.amountPerPerson, specifier: "%.2f") each")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
-                            } else {
-                                Text("Count is 0 - relationship not saved")
-                                    .font(.caption)
-                                    .foregroundStyle(.red)
                             }
                         }
                         .padding(.vertical, 2)
@@ -187,7 +209,8 @@ struct ExpenseDetailView: View {
                 }
                 .listRowBackground(Color.cardBackground)
             }
-                   
+                 
+                   //end here
             
             // Individual Items by Person
             // Individual Items by Person
@@ -240,7 +263,7 @@ struct ExpenseDetailView: View {
                             
                             // Show shared items portion
                             if hasSharedItems {
-                                let sharedTotal = relevantSharedItems.reduce(0) { $0 + $1.amountPerPerson }
+                                let sharedTotal = relevantSharedItems.reduce(0) { $0 + $1.amountFor(person: person) }
                                 
                                 HStack {
                                     Text(hasLineItems ? "+ Share of shared items" : "Share of shared items")

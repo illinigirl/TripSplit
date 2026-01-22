@@ -172,7 +172,6 @@ struct AddExpenseView: View {
                     sharedItems.append(item)
                 }
             }
-            
             .sheet(isPresented: $showingReceiptPicker) {
                 ImagePickerSheet { image in
                     receiptImage = image
@@ -282,7 +281,7 @@ struct AddExpenseView: View {
                 Label("Add Shared Item", systemImage: "plus.circle.fill")
             }
             
-            ForEach(sharedItems) { item in
+            ForEach(Array(sharedItems.enumerated()), id: \.element.id) { index, item in
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
                         Text(item.name)
@@ -290,17 +289,33 @@ struct AddExpenseView: View {
                         Text("$\(item.amount, specifier: "%.2f")")
                             .fontWeight(.medium)
                     }
-                    Text("Split between: \(item.sharedByNames.joined(separator: ", "))")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text("$\(item.amountPerPerson, specifier: "%.2f") each")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    
+                    if item.isCustomSplit {
+                        // Show custom shares breakdown
+                        let breakdown = item.sharedByIDs.compactMap { id -> String? in
+                            guard let person = trip.participants.first(where: { $0.persistentModelID == id }) else { return nil }
+                            let shares = item.shares[id] ?? 1
+                            let amount = item.amountFor(personID: id)
+                            //return "\(person.name) (\(shares)×) $\(amount, specifier: "%.2f")"
+                            return String(format: "%@ (%d×) $%.2f", person.name, shares, amount)
+                        }
+                        Text(breakdown.joined(separator: ", "))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        // Show even split
+                        Text("Split between: \(item.sharedByNames.joined(separator: ", "))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text("$\(item.amountPerPerson, specifier: "%.2f") each")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
-            .onDelete { indexSet in
-                sharedItems.remove(atOffsets: indexSet)
-            }
+            //.onDelete { indexSet in
+              //  sharedItems.remove(atOffsets: indexSet)
+           // }
         } header: {
             Text("Shared Items (Appetizers, etc.)")
         }
@@ -326,6 +341,7 @@ struct AddExpenseView: View {
                         }
                     }
                     
+                    // Show individual items if they exist
                     if let items = personLineItems[person.persistentModelID], !items.isEmpty {
                         ForEach(items) { item in
                             HStack {
@@ -347,6 +363,23 @@ struct AddExpenseView: View {
                                 .font(.subheadline)
                                 .fontWeight(.medium)
                         }
+                    }
+                    
+                    // Show shared items portion
+                    let hasSharedItems = sharedItems.contains(where: { $0.sharedByIDs.contains(person.persistentModelID) })
+                    if hasSharedItems {
+                        let personSharedTotal = sharedItems
+                            .filter { $0.sharedByIDs.contains(person.persistentModelID) }
+                            .reduce(0) { $0 + $1.amountFor(personID: person.persistentModelID) }
+                        
+                        HStack {
+                            Text("+ Share of shared items")
+                                .font(.caption)
+                            Spacer()
+                            Text("$\(personSharedTotal, specifier: "%.2f")")
+                                .font(.caption)
+                        }
+                        .foregroundStyle(.secondary)
                     }
                 }
                 .padding(.vertical, 4)
@@ -443,9 +476,10 @@ struct AddExpenseView: View {
     private func calculateFinalAmount(for person: Person, total: Double) -> Double? {
         let itemsSubtotal = personSubtotal(for: person)
         
+        // Calculate person's share of shared items using new method
         let personSharedTotal = sharedItems
             .filter { $0.sharedByIDs.contains(person.persistentModelID) }
-            .reduce(0) { $0 + $1.amountPerPerson }
+            .reduce(0) { $0 + $1.amountFor(personID: person.persistentModelID) }
         
         let personSubtotal = itemsSubtotal + personSharedTotal
         
@@ -460,15 +494,6 @@ struct AddExpenseView: View {
         // Apply person's percentage to the total (including tax/tip)
         let percentage = personSubtotal / grandSubtotal
         return percentage * total
-    }
-    
-    private func filterNumeric(_ value: String) -> String {
-        let filtered = value.filter { "0123456789.".contains($0) }
-        let parts = filtered.split(separator: ".")
-        if parts.count > 2 {
-            return String(parts[0]) + "." + parts[1...].joined()
-        }
-        return filtered
     }
     
     private func adjustSharesForRounding(shares: [(person: Person, amount: Double)], total: Double) -> [(person: Person, amount: Double)] {
@@ -487,6 +512,15 @@ struct AddExpenseView: View {
         }
         
         return adjustedShares
+    }
+    
+    private func filterNumeric(_ value: String) -> String {
+        let filtered = value.filter { "0123456789.".contains($0) }
+        let parts = filtered.split(separator: ".")
+        if parts.count > 2 {
+            return String(parts[0]) + "." + parts[1...].joined()
+        }
+        return filtered
     }
     
     private var canSave: Bool {
@@ -553,52 +587,55 @@ struct AddExpenseView: View {
         case .item:
             for person in trip.participants {
                 if let items = personLineItems[person.persistentModelID] {
-                    // Calculate shares for each person with items
-                    var sharesData: [(person: Person, amount: Double)] = []
-                    for person in trip.participants {
-                        if let finalAmount = calculateFinalAmount(for: person, total: amountValue) {
-                            sharesData.append((person: person, amount: finalAmount))
-                        }
-                    }
-
-                    // Adjust for rounding and create ExpenseShare objects
-                    let adjustedShares = adjustSharesForRounding(shares: sharesData, total: amountValue)
-                    for shareData in adjustedShares {
-                        let share = ExpenseShare(person: shareData.person, amount: shareData.amount)
-                        share.expense = expense
-                        expense.shares.append(share)
-                        modelContext.insert(share)
+                    for tempItem in items {
+                        let lineItem = LineItem(name: tempItem.name, amount: tempItem.amount)
+                        lineItem.person = person
+                        lineItem.expense = expense
+                        person.lineItems.append(lineItem)
+                        modelContext.insert(lineItem)
                     }
                 }
             }
             
             for tempShared in sharedItems {
                 let sharedItem = SharedItem(name: tempShared.name, amount: tempShared.amount)
+                sharedItem.isCustomSplit = tempShared.isCustomSplit
                 modelContext.insert(sharedItem)
                 sharedItem.expense = expense
                 
-                // Build the sharedBy array by finding people in the trip
+                // Build customShares dictionary with string keys
+                var customSharesDict: [String: Int] = [:]
+                
                 for personID in tempShared.sharedByIDs {
                     if let person = trip.participants.first(where: { $0.persistentModelID == personID }) {
                         sharedItem.sharedBy.append(person)
-                        // Also set the reverse relationship
                         person.sharedItems.append(sharedItem)
+                        
+                        // Store custom shares using string representation of ID
+                        let shares = tempShared.shares[personID] ?? 1
+                        customSharesDict[person.name] = shares
                     }
                 }
                 
+                sharedItem.customShares = customSharesDict
                 expense.sharedItems.append(sharedItem)
             }
-
-            // Save immediately after setting up relationships
-            try? modelContext.save()
             
+            // Calculate shares for each person with items
+            var sharesData: [(person: Person, amount: Double)] = []
             for person in trip.participants {
                 if let finalAmount = calculateFinalAmount(for: person, total: amountValue) {
-                    let share = ExpenseShare(person: person, amount: finalAmount)
-                    share.expense = expense
-                    expense.shares.append(share)
-                    modelContext.insert(share)
+                    sharesData.append((person: person, amount: finalAmount))
                 }
+            }
+            
+            // Adjust for rounding and create ExpenseShare objects
+            let adjustedShares = adjustSharesForRounding(shares: sharesData, total: amountValue)
+            for shareData in adjustedShares {
+                let share = ExpenseShare(person: shareData.person, amount: shareData.amount)
+                share.expense = expense
+                expense.shares.append(share)
+                modelContext.insert(share)
             }
         }
         
