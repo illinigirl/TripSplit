@@ -676,19 +676,43 @@ struct EditExpenseView: View {
     }
     
     private var canSave: Bool {
-        guard let amountValue = Double(amount), amountValue > 0 else { return false }
-        guard !description.isEmpty else { return false }
-        guard selectedPayer != nil else { return false }
-        guard !selectedParticipants.isEmpty else { return false }
+       
+        
+        guard let amountValue = Double(amount), amountValue > 0 else {
+            print("Failed: amount invalid")
+            return false
+        }
+        guard !description.isEmpty else {
+            print("Failed: description empty")
+            return false
+        }
+        guard selectedPayer != nil else {
+            print("Failed: no payer")
+            return false
+        }
+        
+        switch splitType {
+        case .even, .custom:
+            guard !selectedParticipants.isEmpty else {
+                print("Failed: no participants")
+                return false
+            }
+        case .item:
+            break
+        }
         
         switch splitType {
         case .even:
+            print("Passed: even split")
             return true
         case .custom:
             let assigned = customAmounts.values.compactMap { Double($0) }.reduce(0, +)
-            return abs(assigned - amountValue) < 0.01
+            let matches = abs(assigned - amountValue) < 0.01
+            print("custom: assigned=\(assigned), total=\(amountValue), matches=\(matches)")
+            return matches
         case .item:
             let hasItems = !personLineItems.isEmpty || !sharedItems.isEmpty
+            print("item: hasItems=\(hasItems)")
             return hasItems
         }
     }

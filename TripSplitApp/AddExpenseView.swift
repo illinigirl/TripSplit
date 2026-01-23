@@ -527,7 +527,14 @@ struct AddExpenseView: View {
         guard let amountValue = Double(amount), amountValue > 0 else { return false }
         guard !description.isEmpty else { return false }
         guard selectedPayer != nil else { return false }
-        guard !selectedParticipants.isEmpty else { return false }
+        
+        switch splitType {
+        case .even, .custom:
+            guard !selectedParticipants.isEmpty else { return false }
+        case .item:
+            // For item split, participants are determined by who has items
+            break
+        }
         
         switch splitType {
         case .even:
