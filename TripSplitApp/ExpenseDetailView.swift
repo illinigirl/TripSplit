@@ -357,7 +357,7 @@ struct ExpenseDetailView: View {
                             Text("$\(share, specifier: "%.2f")")
                                 .font(.headline)
                             if share != expense.amount / Double(expense.participantCount) {
-                                Text("custom split")
+                                Text("by shares")
                                     .font(.caption2)
                                     .foregroundStyle(.secondary)
                             }

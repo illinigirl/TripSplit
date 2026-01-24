@@ -21,7 +21,7 @@ struct EditExpenseView: View {
     @State private var selectedPayer: Person?
     @State private var selectedParticipants: Set<PersistentIdentifier> = []
     @State private var splitType: SplitType = .even
-    @State private var customAmounts: [PersistentIdentifier: String] = [:]
+    @State private var customShares: [PersistentIdentifier: String] = [:]  // Changed from customAmounts
     
     // Line items per person
     @State private var personLineItems: [PersistentIdentifier: [TempLineItem]] = [:]
@@ -81,9 +81,6 @@ struct EditExpenseView: View {
             _personLineItems = State(initialValue: loadedLineItems)
             
             // Load shared items
-            
-            
-            // Load shared items
             var loadedSharedItems: [TempSharedItem] = []
             for sharedItem in expense.sharedItems {
                 let sharedByIDs = sharedItem.sharedBy.map { $0.persistentModelID }
@@ -91,7 +88,6 @@ struct EditExpenseView: View {
                 
                 // Load custom shares from the database
                 var shares: [PersistentIdentifier: Int] = [:]
-                
                 for person in sharedItem.sharedBy {
                     let shareCount = sharedItem.customShares[person.name] ?? 1
                     shares[person.persistentModelID] = shareCount
@@ -103,11 +99,10 @@ struct EditExpenseView: View {
                     sharedByIDs: sharedByIDs,
                     sharedByNames: sharedByNames,
                     shares: shares,
-                    isCustomSplit: sharedItem.isCustomSplit  // Use actual saved value
+                    isCustomSplit: sharedItem.isCustomSplit
                 ))
             }
             _sharedItems = State(initialValue: loadedSharedItems)
-            
         } else {
             // Check if it's an even split
             let shares = expense.shares
@@ -117,15 +112,21 @@ struct EditExpenseView: View {
             if isEven {
                 _splitType = State(initialValue: .even)
             } else {
-                // Treat non-even as custom
-                _splitType = State(initialValue: .custom)
-                var customAmts: [PersistentIdentifier: String] = [:]
+                // Treat non-even as shares
+                _splitType = State(initialValue: .shares)
+                var customShrs: [PersistentIdentifier: String] = [:]
+                
+                // Try to reverse-engineer the shares from the amounts
+                let minAmount = amounts.min() ?? 1.0
+                
                 for participant in participants {
-                    if let share = expense.getShare(for: participant) {
-                        customAmts[participant.persistentModelID] = String(format: "%.2f", share)
+                    if let shareAmount = expense.getShare(for: participant) {
+                        // Calculate shares as ratio to minimum
+                        let shares = Int(round(shareAmount / minAmount))
+                        customShrs[participant.persistentModelID] = String(shares)
                     }
                 }
-                _customAmounts = State(initialValue: customAmts)
+                _customShares = State(initialValue: customShrs)
             }
         }
     }
@@ -240,8 +241,8 @@ struct EditExpenseView: View {
                     switch splitType {
                     case .even:
                         evenSplitSection
-                    case .custom:
-                        customAmountsSection
+                    case .shares:
+                        sharesSplitSection
                     case .item:
                         itemSection
                     }
@@ -340,8 +341,8 @@ struct EditExpenseView: View {
         .listRowBackground(Color.cardBackground)
     }
     
-    private var customAmountsSection: some View {
-        Section("Custom Amounts") {
+    private var sharesSplitSection: some View {
+        Section {
             ForEach(trip.participants) { person in
                 HStack {
                     Circle()
@@ -349,39 +350,56 @@ struct EditExpenseView: View {
                         .frame(width: 30, height: 30)
                     Text(person.name)
                     Spacer()
-                    TextField("$0.00", text: Binding(
-                        get: { customAmounts[person.persistentModelID] ?? "" },
-                        set: {
-                            customAmounts[person.persistentModelID] = $0
-                            if Double($0) ?? 0 > 0 {
-                                selectedParticipants.insert(person.persistentModelID)
-                            } else {
-                                selectedParticipants.remove(person.persistentModelID)
+                    Stepper(
+                        value: Binding(
+                            get: { Int(customShares[person.persistentModelID] ?? "0") ?? 0 },
+                            set: { newValue in
+                                customShares[person.persistentModelID] = String(newValue)
+                                if newValue > 0 {
+                                    selectedParticipants.insert(person.persistentModelID)
+                                } else {
+                                    selectedParticipants.remove(person.persistentModelID)
+                                }
                             }
-                        }
-                    ))
-                    .keyboardType(.decimalPad)
-                    .multilineTextAlignment(.trailing)
-                    .frame(width: 80)
+                        ),
+                        in: 0...20
+                    ) {
+                        Text("\(Int(customShares[person.persistentModelID] ?? "0") ?? 0) share\(Int(customShares[person.persistentModelID] ?? "0") ?? 0 == 1 ? "" : "s")")
+                            .frame(width: 80, alignment: .trailing)
+                    }
                 }
             }
             
             if let total = Double(amount) {
-                let assigned = customAmounts.values.compactMap { Double($0) }.reduce(0, +)
-                HStack {
-                    Text("Assigned")
-                    Spacer()
-                    Text("$\(assigned, specifier: "%.2f")")
-                        .fontWeight(.semibold)
-                }
-                HStack {
-                    Text("Remaining")
-                    Spacer()
-                    Text("$\(total - assigned, specifier: "%.2f")")
-                        .fontWeight(.semibold)
-                        .foregroundStyle(abs(total - assigned) < 0.01 ? Color.moneyOwing : Color.moneyOwed)
+                let totalShares = customShares.values.compactMap { Int($0) }.reduce(0, +)
+                
+                if totalShares > 0 {
+                    Divider()
+                    
+                    Text("Total: \(totalShares) share\(totalShares == 1 ? "" : "s")")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    
+                    ForEach(trip.participants.filter { (Int(customShares[$0.persistentModelID] ?? "0") ?? 0) > 0 }) { person in
+                        let shares = Int(customShares[person.persistentModelID] ?? "0") ?? 0
+                        let amount = total * Double(shares) / Double(totalShares)
+                        HStack {
+                            Circle()
+                                .fill(Color(person.color))
+                                .frame(width: 20, height: 20)
+                            Text(person.name)
+                            Spacer()
+                            Text("$\(amount, specifier: "%.2f")")
+                                .foregroundStyle(.secondary)
+                        }
+                        .font(.subheadline)
+                    }
                 }
             }
+        } header: {
+            Text("Assign Shares")
+        } footer: {
+            Text("Each person's share will be calculated proportionally. For example, 2 shares pays twice as much as 1 share.")
         }
         .listRowBackground(Color.cardBackground)
     }
@@ -676,43 +694,25 @@ struct EditExpenseView: View {
     }
     
     private var canSave: Bool {
-       
-        
-        guard let amountValue = Double(amount), amountValue > 0 else {
-            print("Failed: amount invalid")
-            return false
-        }
-        guard !description.isEmpty else {
-            print("Failed: description empty")
-            return false
-        }
-        guard selectedPayer != nil else {
-            print("Failed: no payer")
-            return false
-        }
+        guard let amountValue = Double(amount), amountValue > 0 else { return false }
+        guard !description.isEmpty else { return false }
+        guard selectedPayer != nil else { return false }
         
         switch splitType {
-        case .even, .custom:
-            guard !selectedParticipants.isEmpty else {
-                print("Failed: no participants")
-                return false
-            }
+        case .even, .shares:
+            guard !selectedParticipants.isEmpty else { return false }
         case .item:
             break
         }
         
         switch splitType {
         case .even:
-            print("Passed: even split")
             return true
-        case .custom:
-            let assigned = customAmounts.values.compactMap { Double($0) }.reduce(0, +)
-            let matches = abs(assigned - amountValue) < 0.01
-            print("custom: assigned=\(assigned), total=\(amountValue), matches=\(matches)")
-            return matches
+        case .shares:
+            let totalShares = customShares.values.compactMap { Int($0) }.reduce(0, +)
+            return totalShares > 0
         case .item:
             let hasItems = !personLineItems.isEmpty || !sharedItems.isEmpty
-            print("item: hasItems=\(hasItems)")
             return hasItems
         }
     }
@@ -771,11 +771,15 @@ struct EditExpenseView: View {
                 modelContext.insert(share)
             }
             
-        case .custom:
+        case .shares:
+            let totalShares = customShares.values.compactMap { Int($0) }.reduce(0, +)
+            guard totalShares > 0 else { return }
+            
             for person in participantsList {
-                if let amountStr = customAmounts[person.persistentModelID],
-                   let customAmount = Double(amountStr) {
-                    let share = ExpenseShare(person: person, amount: customAmount)
+                if let sharesStr = customShares[person.persistentModelID],
+                   let shares = Int(sharesStr), shares > 0 {
+                    let shareAmount = amountValue * Double(shares) / Double(totalShares)
+                    let share = ExpenseShare(person: person, amount: shareAmount)
                     share.expense = expense
                     expense.shares.append(share)
                     modelContext.insert(share)
@@ -811,7 +815,7 @@ struct EditExpenseView: View {
                         sharedItem.sharedBy.append(person)
                         person.sharedItems.append(sharedItem)
                         
-                        // Store custom shares using string representation of ID
+                        // Store custom shares using person name
                         let shares = tempShared.shares[personID] ?? 1
                         customSharesDict[person.name] = shares
                     }
