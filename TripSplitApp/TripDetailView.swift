@@ -123,9 +123,16 @@ struct TripDetailView: View {
                     } label: {
                         Label("Add Person", systemImage: "person.badge.plus")
                     }
-                    
+
                     NavigationLink(destination: SettlementView(trip: trip)) {
                         Label("Settle Up", systemImage: "checkmark.circle")
+                    }
+
+                    ShareLink(
+                        item: TripReportGenerator(trip: trip).generateReportURL(),
+                        preview: SharePreview("\(trip.name) Report", image: Image(systemName: "doc.richtext.fill"))
+                    ) {
+                        Label("Export Report", systemImage: "square.and.arrow.up")
                     }
                 } label: {
                     Image(systemName: "ellipsis.circle")
