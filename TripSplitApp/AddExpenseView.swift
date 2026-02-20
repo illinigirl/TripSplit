@@ -22,6 +22,7 @@ struct AddExpenseView: View {
     
     @State private var amount = ""
     @State private var description = ""
+    @State private var date: Date = Date()
     @State private var category = "Food"
     @State private var selectedPayer: Person?
     @State private var selectedParticipants: Set<PersistentIdentifier> = []
@@ -61,7 +62,9 @@ struct AddExpenseView: View {
                                 amount = filterNumeric(newValue)
                             }
                         TextField("Description", text: $description)
-                        
+
+                        DatePicker("Date", selection: $date, displayedComponents: .date)
+
                         Picker("Category", selection: $category) {
                             ForEach(categories, id: \.self) { category in
                                 Text(category).tag(category)
@@ -573,6 +576,7 @@ struct AddExpenseView: View {
         let expense = Expense(
             amount: amountValue,
             description: description,
+            date: date,
             category: category,
             paidBy: payer
         )

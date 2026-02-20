@@ -17,6 +17,7 @@ struct EditExpenseView: View {
     
     @State private var amount: String
     @State private var description: String
+    @State private var date: Date
     @State private var category: String
     @State private var selectedPayer: Person?
     @State private var selectedParticipants: Set<PersistentIdentifier> = []
@@ -44,6 +45,7 @@ struct EditExpenseView: View {
         // Pre-populate fields
         _amount = State(initialValue: String(expense.amount))
         _description = State(initialValue: expense.expenseDescription)
+        _date = State(initialValue: expense.date)
         _category = State(initialValue: expense.category)
         _selectedPayer = State(initialValue: expense.paidBy)
         
@@ -153,13 +155,19 @@ struct EditExpenseView: View {
                                     amount = filterNumeric(newValue)
                                 }
                         }
-                        
+
                         HStack {
                             Image(systemName: "text.alignleft")
                                 .foregroundStyle(Color.sunsetOrange)
                             TextField("Description", text: $description)
                         }
-                        
+
+                        HStack {
+                            Image(systemName: "calendar")
+                                .foregroundStyle(Color.oceanTeal)
+                            DatePicker("Date", selection: $date, displayedComponents: .date)
+                        }
+
                         HStack {
                             Image(systemName: categoryIcon(for: category))
                                 .foregroundStyle(Color.oceanTeal)
@@ -724,9 +732,9 @@ struct EditExpenseView: View {
         // Update existing expense
         expense.amount = amountValue
         expense.expenseDescription = description
+        expense.date = date
         expense.category = category
         expense.paidBy = payer
-        // Don't update date on edit
         
         // Update receipt image
         if let image = receiptImage {
