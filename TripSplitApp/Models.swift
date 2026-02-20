@@ -34,8 +34,9 @@ class Person: Identifiable {
     var color: String
     var trip: Trip?
     @Relationship(deleteRule: .cascade) var lineItems: [LineItem] = []
-    @Relationship(deleteRule: .nullify) var sharedItems: [SharedItem] = []  // ADD THIS LINE
-    
+    @Relationship(deleteRule: .nullify) var sharedItems: [SharedItem] = []
+    @Relationship(deleteRule: .nullify) var friend: Friend?
+
     init(name: String, color: String = "blue") {
         self.name = name
         self.color = color
@@ -188,7 +189,8 @@ class Friend: Identifiable {
     var color: String
     var email: String?
     var phone: String?
-    
+    @Relationship(deleteRule: .nullify, inverse: \Person.friend) var linkedPersons: [Person] = []
+
     init(name: String, color: String = "blue", email: String? = nil, phone: String? = nil) {
         self.name = name
         self.color = color

@@ -23,9 +23,9 @@ struct AddPersonToTripView: View {
     let availableColors = ["coral", "pink", "yellow", "blue", "teal", "purple", "indigo", "green"]
     
     var availableFriends: [Friend] {
-        // Filter out friends already in the trip
+        // Filter out friends already linked to a participant in this trip
         friends.filter { friend in
-            !trip.participants.contains(where: { $0.name == friend.name })
+            !trip.participants.contains(where: { $0.friend?.id == friend.id })
         }
     }
     
@@ -167,8 +167,9 @@ struct AddPersonToTripView: View {
         let person: Person
         
         if let friend = selectedFriend {
-            // Add from friends list
+            // Add from friends list and link so future name/color edits propagate
             person = Person(name: friend.name, color: friend.color)
+            person.friend = friend
         } else {
             // Add manually entered person
             person = Person(name: manualName, color: manualColor)

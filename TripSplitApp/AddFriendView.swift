@@ -128,8 +128,26 @@ struct AddFriendView: View {
     
     private func saveFriend() {
         if let friend = friend {
-            // Edit existing friend
-            friend.name = name
+            let oldName = friend.name
+            let newName = name
+
+            // Sync name/color changes to every Person in a trip that was added from this friend
+            for person in friend.linkedPersons {
+                if oldName != newName {
+                    // Re-key any customShares entries that used this person's old name
+                    for sharedItem in person.sharedItems {
+                        if let oldShares = sharedItem.customShares[oldName] {
+                            sharedItem.customShares[newName] = oldShares
+                            sharedItem.customShares.removeValue(forKey: oldName)
+                        }
+                    }
+                    person.name = newName
+                }
+                person.color = selectedColor
+            }
+
+            // Edit the friend record itself
+            friend.name = newName
             friend.color = selectedColor
             friend.email = email.isEmpty ? nil : email
             friend.phone = phone.isEmpty ? nil : phone
