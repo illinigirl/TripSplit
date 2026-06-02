@@ -31,6 +31,10 @@ struct EditExpenseView: View {
     // For adding items
     @State private var selectedPersonID: PersistentIdentifier?
     @State private var showingAddSharedItemSheet = false
+
+    // For editing items
+    @State private var editingLineItem: LineItemEditInfo?
+    @State private var editingSharedItemIndex: Int?
     
     // For receipt image
     @State private var showingReceiptPicker = false
@@ -287,6 +291,32 @@ struct EditExpenseView: View {
                     sharedItems.append(item)
                 }
             }
+            .sheet(item: $editingLineItem) { editInfo in
+                if let person = trip.participants.first(where: { $0.persistentModelID == editInfo.personID }),
+                   let items = personLineItems[editInfo.personID],
+                   editInfo.itemIndex < items.count {
+                    EditLineItemSheet(
+                        personName: person.name,
+                        personColor: person.color,
+                        item: items[editInfo.itemIndex]
+                    ) { updatedItem in
+                        personLineItems[editInfo.personID]?[editInfo.itemIndex] = updatedItem
+                    }
+                }
+            }
+            .sheet(item: Binding(
+                get: { editingSharedItemIndex.map { SharedItemEditWrapper(index: $0) } },
+                set: { editingSharedItemIndex = $0?.index }
+            )) { wrapper in
+                if wrapper.index < sharedItems.count {
+                    EditSharedItemSheet(
+                        participants: trip.participants,
+                        item: sharedItems[wrapper.index]
+                    ) { updatedItem in
+                        sharedItems[wrapper.index] = updatedItem
+                    }
+                }
+            }
             .sheet(isPresented: $showingReceiptPicker) {
                 ImagePickerSheet { image in
                     receiptImage = image
@@ -436,7 +466,7 @@ struct EditExpenseView: View {
                         Spacer()
                         Text("$\(item.amount, specifier: "%.2f")")
                             .fontWeight(.medium)
-                        
+
                         Button(action: {
                             sharedItems.remove(at: index)
                         }) {
@@ -446,7 +476,7 @@ struct EditExpenseView: View {
                         }
                         .buttonStyle(.plain)
                     }
-                    
+
                     if item.isCustomSplit {
                         // Show custom shares breakdown
                         let breakdown = item.sharedByIDs.compactMap { id -> String? in
@@ -467,6 +497,10 @@ struct EditExpenseView: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
+                }
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    editingSharedItemIndex = index
                 }
             }
         } header: {
@@ -508,7 +542,7 @@ struct EditExpenseView: View {
                                     Spacer()
                                     Text("$\(item.amount, specifier: "%.2f")")
                                         .font(.subheadline)
-                                    
+
                                     Button(action: {
                                         personLineItems[person.persistentModelID]?.remove(at: index)
                                         if personLineItems[person.persistentModelID]?.isEmpty == true {
@@ -522,6 +556,10 @@ struct EditExpenseView: View {
                                     .buttonStyle(.plain)
                                 }
                                 .foregroundStyle(.secondary)
+                                .contentShape(Rectangle())
+                                .onTapGesture {
+                                    editingLineItem = LineItemEditInfo(personID: person.persistentModelID, itemIndex: index)
+                                }
                             }
                             
                             HStack {

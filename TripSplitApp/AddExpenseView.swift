@@ -36,6 +36,10 @@ struct AddExpenseView: View {
     // For adding items - using ID instead of Person object
     @State private var selectedPersonID: PersistentIdentifier?
     @State private var showingAddSharedItemSheet = false
+
+    // For editing items
+    @State private var editingLineItem: LineItemEditInfo?
+    @State private var editingSharedItemIndex: Int?
     
     // For receipt image
     @State private var showingReceiptPicker = false
@@ -175,6 +179,32 @@ struct AddExpenseView: View {
                     sharedItems.append(item)
                 }
             }
+            .sheet(item: $editingLineItem) { editInfo in
+                if let person = trip.participants.first(where: { $0.persistentModelID == editInfo.personID }),
+                   let items = personLineItems[editInfo.personID],
+                   editInfo.itemIndex < items.count {
+                    EditLineItemSheet(
+                        personName: person.name,
+                        personColor: person.color,
+                        item: items[editInfo.itemIndex]
+                    ) { updatedItem in
+                        personLineItems[editInfo.personID]?[editInfo.itemIndex] = updatedItem
+                    }
+                }
+            }
+            .sheet(item: Binding(
+                get: { editingSharedItemIndex.map { SharedItemEditWrapper(index: $0) } },
+                set: { editingSharedItemIndex = $0?.index }
+            )) { wrapper in
+                if wrapper.index < sharedItems.count {
+                    EditSharedItemSheet(
+                        participants: trip.participants,
+                        item: sharedItems[wrapper.index]
+                    ) { updatedItem in
+                        sharedItems[wrapper.index] = updatedItem
+                    }
+                }
+            }
             .sheet(isPresented: $showingReceiptPicker) {
                 ImagePickerSheet { image in
                     receiptImage = image
@@ -311,14 +341,13 @@ struct AddExpenseView: View {
                         Text("$\(item.amount, specifier: "%.2f")")
                             .fontWeight(.medium)
                     }
-                    
+
                     if item.isCustomSplit {
                         // Show custom shares breakdown
                         let breakdown = item.sharedByIDs.compactMap { id -> String? in
                             guard let person = trip.participants.first(where: { $0.persistentModelID == id }) else { return nil }
                             let shares = item.shares[id] ?? 1
                             let amount = item.amountFor(personID: id)
-                            //return "\(person.name) (\(shares)×) $\(amount, specifier: "%.2f")"
                             return String(format: "%@ (%d×) $%.2f", person.name, shares, amount)
                         }
                         Text(breakdown.joined(separator: ", "))
@@ -334,10 +363,11 @@ struct AddExpenseView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    editingSharedItemIndex = index
+                }
             }
-            //.onDelete { indexSet in
-              //  sharedItems.remove(atOffsets: indexSet)
-           // }
         } header: {
             Text("Shared Items (Appetizers, etc.)")
         }
@@ -365,7 +395,7 @@ struct AddExpenseView: View {
                     
                     // Show individual items if they exist
                     if let items = personLineItems[person.persistentModelID], !items.isEmpty {
-                        ForEach(items) { item in
+                        ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                             HStack {
                                 Text("• \(item.name)")
                                     .font(.subheadline)
@@ -374,6 +404,10 @@ struct AddExpenseView: View {
                                     .font(.subheadline)
                             }
                             .foregroundStyle(.secondary)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                editingLineItem = LineItemEditInfo(personID: person.persistentModelID, itemIndex: index)
+                            }
                         }
                         
                         HStack {
