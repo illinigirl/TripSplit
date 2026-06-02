@@ -6,6 +6,9 @@ struct TripDetailView: View {
     @Environment(\.modelContext) private var modelContext
     @State private var showingAddExpense = false
     @State private var showingAddPerson = false
+    @State private var showingRenameTrip = false
+    @State private var renameText = ""
+    @State private var blockedRemovalPerson: Person?
     
     var whoShouldPayNext: Person? {
         guard !trip.participants.isEmpty else { return nil }
@@ -60,6 +63,13 @@ struct TripDetailView: View {
                                 .foregroundStyle(person.netBalance(in: trip) >= 0 ? Color.moneyOwing : Color.moneyOwed)
                         }
                         .padding(.vertical, 4)
+                        .swipeActions(edge: .trailing) {
+                            Button(role: .destructive) {
+                                attemptRemove(person)
+                            } label: {
+                                Label("Remove", systemImage: "person.badge.minus")
+                            }
+                        }
                     }
                 }
                 .listRowBackground(Color.cardBackground)
@@ -119,6 +129,13 @@ struct TripDetailView: View {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
                     Button {
+                        renameText = trip.name
+                        showingRenameTrip = true
+                    } label: {
+                        Label("Rename Trip", systemImage: "pencil")
+                    }
+
+                    Button {
                         showingAddPerson = true
                     } label: {
                         Label("Add Person", systemImage: "person.badge.plus")
@@ -146,8 +163,56 @@ struct TripDetailView: View {
         .sheet(isPresented: $showingAddPerson) {
             AddPersonToTripView(trip: trip)
         }
+        .alert("Rename Trip", isPresented: $showingRenameTrip) {
+            TextField("Trip name", text: $renameText)
+            Button("Cancel", role: .cancel) { }
+            Button("Save") {
+                let trimmed = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty {
+                    trip.name = trimmed
+                }
+            }
+        }
+        .alert(
+            "Can't Remove \(blockedRemovalPerson?.name ?? "Person")",
+            isPresented: Binding(
+                get: { blockedRemovalPerson != nil },
+                set: { if !$0 { blockedRemovalPerson = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) { blockedRemovalPerson = nil }
+        } message: {
+            Text("They're involved in one or more expenses. Remove or reassign those expenses first.")
+        }
     }
-    
+
+    // Returns true if the person is tied to any expense — as payer, as a
+    // share participant, via line items, or as part of a shared item.
+    private func isInvolvedInExpenses(_ person: Person) -> Bool {
+        if trip.expenses.contains(where: { $0.paidBy?.id == person.id }) { return true }
+        if trip.expenses.contains(where: { expense in
+            expense.shares.contains(where: { $0.person?.id == person.id })
+        }) { return true }
+        if !person.lineItems.isEmpty { return true }
+        if trip.expenses.contains(where: { expense in
+            expense.sharedItems.contains(where: { item in
+                item.sharedBy.contains(where: { $0.id == person.id })
+            })
+        }) { return true }
+        return false
+    }
+
+    private func attemptRemove(_ person: Person) {
+        guard !isInvolvedInExpenses(person) else {
+            blockedRemovalPerson = person
+            return
+        }
+        if let index = trip.participants.firstIndex(where: { $0.id == person.id }) {
+            trip.participants.remove(at: index)
+        }
+        modelContext.delete(person)
+    }
+
     private func deleteExpenses(at offsets: IndexSet) {
         let sortedExpenses = trip.expenses.sorted(by: { $0.date > $1.date })
         for index in offsets {
