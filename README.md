@@ -14,6 +14,38 @@ get a short list of "pay X $40, pay Y $15."
 > Built as a personal project to round out a portfolio that otherwise lives in
 > other domains — it's the "ship a real, native mobile app end-to-end" exhibit.
 
+## Highlights
+
+Two things set TripSplit apart from a typical "split the bill evenly" app:
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+**🧮 Minimal-transfer settlement**
+
+Most apps just tell you everyone's balance. TripSplit runs a graph-based
+algorithm to collapse all the IOUs into the **fewest payments** that settle
+the group — and surfaces *who should grab the next expense* to keep things
+even as the trip goes.
+
+</td>
+<td width="50%" valign="top">
+
+**🔀 Per-item custom-share splitting**
+
+Splitting isn't just even-vs-itemized. Any **shared item** can be divided by
+**custom shares** (e.g. one person had two drinks), not just split equally —
+a level of granularity most expense-splitters don't offer.
+
+</td>
+</tr>
+<tr>
+<td align="center"><img src="screenshots/balances-settlement.png" width="260" alt="Balances and settlement view" /></td>
+<td align="center"><img src="screenshots/split-modes.png" width="260" alt="Even vs custom-share splitting for a shared item" /></td>
+</tr>
+</table>
+
 ## Features
 
 - **Trips & participants** — create trips, add people (with color identities), rename trips, and remove participants who aren't yet tied to any expense.
