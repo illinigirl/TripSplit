@@ -1,0 +1,31 @@
+# macOS
+.DS_Store
+
+# Xcode — user-specific state (breakpoints, window layout, scheme prefs)
+xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+
+# Build products & derived data
+build/
+DerivedData/
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Swift Package Manager
+.swiftpm/
+.build/
+Packages/
+Package.resolved
+
+# CocoaPods / Carthage (not used here, but standard to ignore)
+Pods/
+Carthage/Build/
+
+# Fastlane
+fastlane/report.xml
+fastlane/screenshots/**/*.png
+fastlane/test_output
