@@ -11,8 +11,10 @@ to split each expense, and then computes the **minimum set of transfers** needed
 to settle everyone up — so instead of a tangle of "you owe me, I owe them," you
 get a short list of "pay X $40, pay Y $15."
 
-> Built as a personal project to round out a portfolio that otherwise lives in
-> other domains — it's the "ship a real, native mobile app end-to-end" exhibit.
+> Built it because every trip with friends ends in the same messy "who owes who"
+> math — and existing apps either split everything evenly or make you itemize
+> every line. I wanted minimal-payment settlement *and* per-item custom shares in
+> one native app.
 
 ## Highlights
 
