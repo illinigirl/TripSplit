@@ -97,6 +97,8 @@ struct TripListView: View {
             .sheet(isPresented: $showingCreateTrip) {
                 CreateTripView()
             }
+            // No-op in Release; seeds demo data for App Store screenshots in DEBUG
+            .modifier(DemoScreenshotModifier())
         }
     }
     
